@@ -328,7 +328,7 @@ class HDST:
 
                         if n_samples < batch_size:
                             if calc_buffer_l + n_samples > batch_size:
-                                out, time_embeddings = self._eval_with_pooling(
+                                out = self._eval_with_pooling(
                                     torch.cat(calc_buffer, dim=0),
                                     slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                     encoding_window=encoding_window,
@@ -341,7 +341,7 @@ class HDST:
                             
                             calc_buffer_l += n_samples
                         else:
-                            out, time_embeddings = self._eval_with_pooling(
+                            out = self._eval_with_pooling(
                                 x_sliding,
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
@@ -351,7 +351,7 @@ class HDST:
 
                     if n_samples < batch_size:
                         if calc_buffer_l > 0:
-                            out, time_embeddings = self._eval_with_pooling(
+                            out = self._eval_with_pooling(
                                 torch.cat(calc_buffer, dim=0),
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
@@ -370,7 +370,7 @@ class HDST:
                         ).squeeze(1)
                         
                 else:
-                    out, time_embeddings = self._eval_with_pooling(
+                    out = self._eval_with_pooling(
                         x,
                         encoding_window=encoding_window,
                     )
