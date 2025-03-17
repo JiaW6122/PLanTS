@@ -59,6 +59,21 @@ class SpectralConv1d(nn.Module):
         x = torch.irfft(out_ft, 1, normalized=True, onesided=True, signal_sizes=(x.size(-1), ))
         return x
 
+class LSTMEncoder(nn.Module):
+    def __init__(self, input_size, output_size, use_hidden=True, bidirect=False):
+        super().__init__()
+        self.main_net = nn.LSTM(input_size=input_size, hidden_size=output_size, bidirectional=bidirect)
+        self.use_hidden=use_hidden
+        self.bidirect=bidirect
+
+    def forward(self, x):
+        outs, hidden, cell = self.main_net(x)
+        if self.use_hidden:
+            return hidden
+        else:
+            return cell
+
+
 class SimpleBlock1d(nn.Module):
     def __init__(self, modes, hidden_dims2, component_dims):
         super(SimpleBlock1d, self).__init__()
@@ -129,7 +144,7 @@ class TimeInvariantEncoder(nn.Module):
         return dist.Normal(loc=mean, scale=std)
 
 
-class HDEncoder(nn.Module):
+class HDEncoder0(nn.Module):
     def __init__(self, input_dims, output_dims, kernels, modes, hidden_dims1=32, hidden_dims2=64, hidden_dims3=128, depth=10, mask_mode='binomial'):
         super().__init__()
         self.input_dims = input_dims
@@ -216,3 +231,105 @@ class HDEncoder(nn.Module):
 
         return trend, season, static, static_pos, static_neg
 
+class HDEncoder1(nn.Module):
+    def __init__(self, input_dims, output_dims, kernels, modes, hidden_dims1=32, hidden_dims2=64, static_dim=128, hidden_dims3=128, depth=10):
+        super().__init__()
+        self.input_dims = input_dims
+        self.output_dims = output_dims
+        self.kernels=kernels
+        self.hidden_dims1 = hidden_dims1
+        self.hidden_dims2 = hidden_dims2
+        self.static_dim = static_dim
+        self.static_extractor=nn.Module([
+            nn.Linear(input_dims,hidden_dims1),
+            nn.Linear(hidden_dims1,hidden_dims2),
+            LSTMEncoder(hidden_dims2,static_dim)
+        ])
+        self.dynamic_extractor=nn.Module([
+            nn.Linear(input_dims,hidden_dims1),
+            nn.Linear(hidden_dims1,hidden_dims2),
+            DilatedConvEncoder(
+            hidden_dims2,
+            [hidden_dims2] * depth + [hidden_dims3],
+            kernel_size=3
+        )
+        ])
+    def forward(self, x, x_shuffle): # x: B x T x input_dims
+        # x
+        static=self.static_extractor(x) # B x static_dim
+
+        # positive sample
+        static_pos=self.static_extractor(x_shuffle)
+        
+        return static, static_pos
+
+class HDEncoder2(nn.Module):
+    def __init__(self, input_dims, output_dims1, output_dims2, kernels1, kernels2, hidden_dims1=32, hidden_dims2=64, depth=10):
+        super().__init__()
+        self.input_dims = input_dims
+        self.output_dims1 = output_dims1 #output dims of static features
+        self.kernels1=kernels1 #kernels of static encoder
+        self.hidden_dims1 = hidden_dims1 #hidden layers dims of static features
+        
+        self.output_dims2 = output_dims2 #output dims of dynamic features
+        self.kernels2=kernels2 #kernels of dynamic encoder
+        self.hidden_dims2 = hidden_dims2 #hidden layers dims of dynamic features
+        
+        # static encoder
+        fc_dim = hidden_dims1 if isinstance(hidden_dims1, int) else hidden_dims1[0]
+        self.input_fc = nn.Linear(input_dims, fc_dim)
+
+        
+        if isinstance(hidden_dims1, np.ndarray):
+            assert depth == len(hidden_dims1)
+            self.static_feature_extractor = DilatedConvEncoder(
+                hidden_dims1[0],
+                list(hidden_dims1) + [output_dims1],
+                kernel_size=kernels1
+            )
+        else:
+            self.static_feature_extractor = DilatedConvEncoder(
+                hidden_dims1,
+                [hidden_dims1] * depth + [output_dims1],
+                kernel_size=kernels1
+            )
+        self.repr_dropout = nn.Dropout(p=0.1)
+
+        # dynamic encoder
+        fc_dim2 = hidden_dims2 if isinstance(hidden_dims2, int) else hidden_dims2[0]
+        self.input_fc2 = nn.Linear(input_dims, fc_dim2)
+
+        
+        if isinstance(hidden_dims2, np.ndarray):
+            assert depth == len(hidden_dims2)
+            self.dynamic_feature_extractor = DilatedConvEncoder(
+                hidden_dims2[0],
+                list(hidden_dims2) + [output_dims2],
+                kernel_size=kernels2
+            )
+        else:
+            self.dynamic_feature_extractor = DilatedConvEncoder(
+                hidden_dims2,
+                [hidden_dims2] * depth + [output_dims2],
+                kernel_size=kernels2
+            )
+        self.repr_dropout2 = nn.Dropout(p=0.1)
+
+
+        
+    def forward(self, x): # x: (B * k) x w x input_dims
+        #static feature representations
+        x_static = self.input_fc(x)  # (B * k) x w x fc_dims
+        # conv encoder
+        x_static = x_static.transpose(1, 2)  # (B * k) x fc_dims x w
+        x_static = self.repr_dropout(self.static_feature_extractor(x_static))  # (B * k) x out_dims1 x w
+        x_static = x_static.transpose(1, 2)  # (B * k) x w x out_dims1
+
+        #dynamic feature representations
+        x_dynamic = self.input_fc2(x)  # (B * k) x w x fc_dims2
+        # conv encoder
+        x_dynamic = x_dynamic.transpose(1, 2)  # (B * k) x fc_dims2 x w
+        x_dynamic = self.repr_dropout2(self.dynamic_feature_extractor(x_dynamic))  # (B * k) x out_dims2 x w
+        x_dynamic = x_dynamic.transpose(1, 2)  # (B * k) x w x out_dims2
+        
+        return x_static, x_dynamic
