@@ -28,42 +28,21 @@ def eval_forecasting(
         valid_slice,
         test_slice,
         scaler,
-        pred_lens,
-        time_embedding,
+        pred_lens
     ):
     padding = 200
-
-    test_time_indices = find_closest_train_segment(data[:, train_slice], data[:, test_slice], squared_dist=True)
-    valid_time_indices = find_closest_train_segment(data[:, train_slice], data[:, valid_slice], squared_dist=True)
-    train_time_indices = np.tile(np.arange(train_slice.stop), (data.shape[0], 1))[..., None]
-    time_indices = np.concatenate((train_time_indices, valid_time_indices, test_time_indices), axis=1)
 
 
     t = time.time()
 
-    if time_embedding:
-        all_repr, all_tembeds = model.encode(
-            data[:, :test_slice.stop],
-            time_indices=time_indices,
-            causal=True,
-            sliding_length=1,
-            sliding_padding=padding,
-            batch_size=64,
-            return_time_embeddings=True,
-        )
-        ts2vec_infer_time = time.time() - t
-        all_repr = np.concatenate((all_repr, all_tembeds), axis=2)
-    else:
-        all_repr = model.encode(
-            data[:, :test_slice.stop],
-            time_indices=time_indices,
-            causal=True,
-            sliding_length=1,
-            sliding_padding=padding,
-            batch_size=64,
-            return_time_embeddings=False,
-        )
-        ts2vec_infer_time = time.time() - t
+    all_repr = model.encode(
+        data[:, :test_slice.stop],
+        causal=True,
+        sliding_length=1,
+        sliding_padding=padding,
+        batch_size=64,
+    )
+    ts2vec_infer_time = time.time() - t
 
 
     train_repr = all_repr[:, train_slice]

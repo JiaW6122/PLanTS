@@ -192,6 +192,8 @@ class HDST:
                     
                 cum_loss += loss.item()
                 n_epoch_iters += 1
+
+                # print(f"n_epoch_iters #{n_epoch_iters}: loss={loss.item()}")
                 
                 self.n_iters += 1
             

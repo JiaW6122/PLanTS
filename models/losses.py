@@ -115,6 +115,7 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
     # print("x_shape:",x.shape)
     S = torch.zeros((B, 2*K, 2*K), device= x.device) # Initialize similarity matrices
     for i in range(B):
+        # print("sample:",i)
         for p in range(2*K):
             for q in range(p+1, 2*K):
               # print(p)
@@ -124,7 +125,7 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
     
     weight = torch.tril(S, diagonal=-1)[:,:,:-1] # B x 2k * (2k-1)
     weight += torch.triu(S, diagonal=1)[:,:,1:]
-    weight = -F.softmax(weight/temperature, dim=-1)
+    weight = F.softmax(weight/temperature, dim=-1)
 
     u_h = u1[:, :, 0:W//2, :] # history windows  (B, k, w//2, out_d)
     u_f = u1[:, :, W//2:, :] # future windows  (B, k, w//2, out_d)
@@ -138,6 +139,8 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
     logits_reshaped = logits.view(B * (2*K), 2*K-1)  # (B*2K, 2K-1)
     weight_reshaped = weight.view(B * (2*K), 2*K-1)  # (B*2K, 2K-1)
     criterion = nn.CrossEntropyLoss()
+    # print(logits_reshaped)
+    # print(weight_reshaped)
     loss = criterion(logits_reshaped, weight_reshaped)
 
     return loss

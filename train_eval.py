@@ -207,8 +207,7 @@ def train_and_test(args, verbose=1, save_eval_res=False):
                 valid_slice,
                 test_slice,
                 scaler,
-                pred_lens,
-                args.time_embedding is not None
+                pred_lens
             )
         elif task_type == 'anomaly_detection':
             out, eval_res = tasks.eval_anomaly_detection(
