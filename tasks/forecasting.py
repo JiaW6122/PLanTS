@@ -42,7 +42,6 @@ def eval_forecasting(
         sliding_padding=padding,
         batch_size=64,
     )
-    ts2vec_infer_time = time.time() - t
 
 
     train_repr = all_repr[:, train_slice]
@@ -94,7 +93,6 @@ def eval_forecasting(
         
     eval_res = {
         'ours': ours_result,
-        'ts2vec_infer_time': ts2vec_infer_time,
         'lr_train_time': lr_train_time,
         'lr_infer_time': lr_infer_time
     }
