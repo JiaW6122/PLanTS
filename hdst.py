@@ -27,6 +27,7 @@ class HDST:
         max_train_length=None,
         temporal_unit=0,
         task_weights=None,
+        mask_mode=None,
         after_iter_callback=None,
         after_epoch_callback=None
     ):
@@ -62,7 +63,8 @@ class HDST:
                             kernels2=kernels2,
                             hidden_dims1=hidden_dims1,
                             hidden_dims2=hidden_dims2, 
-                            depth=depth).to(self.device)
+                            depth=depth,
+                            mask_mode=mask_mode).to(self.device)
         self.net = torch.optim.swa_utils.AveragedModel(self._net)
         self.net.update_parameters(self._net)
 
@@ -211,10 +213,11 @@ class HDST:
     def _eval_with_pooling(
             self,
             x,
+            mask=None,
             slicing=None,
             encoding_window=None,
         ):
-        out_static, out_dynamic = self.net(x.to(self.device, non_blocking=True))
+        out_static, out_dynamic = self.net(x.to(self.device, non_blocking=True),mask)
         out = torch.cat([out_static, out_dynamic], dim=-1)
         
         if encoding_window == 'full_series':
@@ -270,6 +273,7 @@ class HDST:
     def encode(
             self,
             data,
+            mask=None,
             encoding_window=None,
             causal=False,
             sliding_length=None,
@@ -332,6 +336,7 @@ class HDST:
                             if calc_buffer_l + n_samples > batch_size:
                                 out = self._eval_with_pooling(
                                     torch.cat(calc_buffer, dim=0),
+                                    mask=mask,
                                     slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                     encoding_window=encoding_window,
                                 )
@@ -345,6 +350,7 @@ class HDST:
                         else:
                             out = self._eval_with_pooling(
                                 x_sliding,
+                                mask=mask,
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
                             )
@@ -355,6 +361,7 @@ class HDST:
                         if calc_buffer_l > 0:
                             out = self._eval_with_pooling(
                                 torch.cat(calc_buffer, dim=0),
+                                mask=mask,
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
                             )
@@ -374,6 +381,7 @@ class HDST:
                 else:
                     out = self._eval_with_pooling(
                         x,
+                        mask=mask,
                         encoding_window=encoding_window,
                     )
                     if encoding_window == 'full_series':

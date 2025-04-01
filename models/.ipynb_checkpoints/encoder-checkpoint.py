@@ -264,7 +264,7 @@ class HDEncoder1(nn.Module):
         return static, static_pos
 
 class HDEncoder2(nn.Module):
-    def __init__(self, input_dims, output_dims1, output_dims2, kernels1, kernels2, hidden_dims1=32, hidden_dims2=64, depth=10):
+    def __init__(self, input_dims, output_dims1, output_dims2, kernels1, kernels2, hidden_dims1=32, hidden_dims2=64, depth=10,mask_mode='binomial'):
         super().__init__()
         self.input_dims = input_dims
         self.output_dims1 = output_dims1 #output dims of static features
@@ -274,6 +274,8 @@ class HDEncoder2(nn.Module):
         self.output_dims2 = output_dims2 #output dims of dynamic features
         self.kernels2=kernels2 #kernels of dynamic encoder
         self.hidden_dims2 = hidden_dims2 #hidden layers dims of dynamic features
+
+        self.mask_mode = mask_mode
         
         # static encoder
         fc_dim = hidden_dims1 if isinstance(hidden_dims1, int) else hidden_dims1[0]
@@ -317,7 +319,32 @@ class HDEncoder2(nn.Module):
 
 
         
-    def forward(self, x): # x: (B * k) x w x input_dims
+    def forward(self, x,mask=None): # x: (B * k) x w x input_dims
+        nan_mask = ~x.isnan().any(axis=-1)
+        x[~nan_mask] = 0
+
+        # generate & apply mask
+        if mask is None:
+            if self.training:
+                mask = self.mask_mode
+            else:
+                mask = 'all_true'
+        
+        if mask == 'binomial':
+            mask = generate_binomial_mask(x.size(0), x.size(1)).to(x.device)
+        elif mask == 'continuous':
+            mask = generate_continuous_mask(x.size(0), x.size(1)).to(x.device)
+        elif mask == 'all_true':
+            mask = x.new_full((x.size(0), x.size(1)), True, dtype=torch.bool)
+        elif mask == 'all_false':
+            mask = x.new_full((x.size(0), x.size(1)), False, dtype=torch.bool)
+        elif mask == 'mask_last':
+            mask = x.new_full((x.size(0), x.size(1)), True, dtype=torch.bool)
+            mask[:, -1] = False
+        
+        mask &= nan_mask
+        x[~mask] = 0
+        
         #static feature representations
         x_static = self.input_fc(x)  # (B * k) x w x fc_dims
         # conv encoder
