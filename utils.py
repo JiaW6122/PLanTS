@@ -317,3 +317,31 @@ def max_cross_corr(window1,window2):
     
 
     return max_cc
+
+def fast_batch_max_cross_corr(x):  
+    """
+    x: (B, 2K, L, C) => return: (B, 2K, 2K)
+    """
+    B, N, L, C = x.shape
+    x = x.permute(0, 1, 3, 2)  # B x 2K x C x L
+
+    x = x - x.mean(dim=-1, keepdim=True)  # mean centering
+
+    x_fft = torch.fft.rfft(x, dim=-1)  # B x 2K x C x L_rfft
+    x_conj = torch.conj(x_fft)
+
+    # Compute all pairwise cross-correlations
+    x_fft_i = x_fft.unsqueeze(2)  # B x 2K x 1 x C x L_rfft
+    x_fft_j = x_conj.unsqueeze(1)  # B x 1 x 2K x C x L_rfft
+    X = x_fft_i * x_fft_j  # B x 2K x 2K x C x L_rfft
+
+    stds = x.std(dim=-1, keepdim=True)
+    norm = stds.unsqueeze(2) * stds.unsqueeze(1)  # B x 2K x 2K x C x 1
+    norm = torch.where(norm == 0, torch.ones_like(norm), norm)
+    X = X / norm
+
+    cc = torch.fft.irfft(X, n=L, dim=-1)  # B x 2K x 2K x C x L
+    max_cc = cc.max(dim=-1).values  # B x 2K x 2K x C
+    sim = max_cc.mean(dim=-1)  # Average over channels => B x 2K x 2K
+
+    return sim

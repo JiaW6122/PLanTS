@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 import torch.nn.functional as F
-from utils import max_cross_corr
+from utils import max_cross_corr,fast_batch_max_cross_corr
 
 def hierarchical_contrastive_loss(u1,u2,v1,x1,dynamic_pred_task_head,weights,temperature):
     """
@@ -20,7 +20,7 @@ def hierarchical_contrastive_loss(u1,u2,v1,x1,dynamic_pred_task_head,weights,tem
         loss += weights['local_static_contrast'] * local_static_contrastive_loss(u1, u2)
     if weights['global_vatiant_contrast'] != 0:
         # global_loss = global_variant_constrastive_loss(u1)
-        global_loss = global_variant_constrastive_loss_v2(u1,x1,temperature)
+        global_loss = global_variant_constrastive_loss_v2_faster(u1,x1,temperature)
         loss += weights['global_vatiant_contrast'] * global_loss
     if weights['dynamic_trend_pred'] != 0:
         dynamic_loss = dynamic_cond_pred_loss(u1, v1, dynamic_pred_task_head)
@@ -107,6 +107,7 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
 
     Args:
         u1 : Static time-series representations of original time series windows. # (batch_size, k, w, out_dims)
+        x1 : Original time series windows. # (batch_size, k, w, C)
     """
     B, K, W, C = x1.shape
     x_h = x1[:, :, 0:W//2, :] # history windows  (B, k, w//2, C)
@@ -146,6 +147,36 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
     return loss
 
 
+def global_variant_constrastive_loss_v2_faster(u1, x1, temperature):
+    B, K, W, C = x1.shape
+    x_h = x1[:, :, 0:W//2, :]
+    x_f = x1[:, :, W//2:, :]
+    x = torch.cat([x_h, x_f], dim=1)  # B x 2K x L x C
+
+    # Efficient similarity matrix
+    S = fast_batch_max_cross_corr(x)  # B x 2K x 2K
+
+    weight = torch.tril(S, diagonal=-1)[:, :, :-1]
+    weight += torch.triu(S, diagonal=1)[:, :, 1:]
+    weight = F.softmax(weight / temperature, dim=-1)
+
+    u_h = u1[:, :, 0:W//2, :]
+    u_f = u1[:, :, W//2:, :]
+    u_h_static = torch.mean(u_h, dim=2)
+    u_f_static = torch.mean(u_f, dim=2)
+    u = torch.cat([u_h_static, u_f_static], dim=1)  # B x 2K x D
+
+    sim = torch.matmul(u, u.transpose(1, 2))  # B x 2K x 2K
+    logits = torch.tril(sim, diagonal=-1)[:, :, :-1]
+    logits += torch.triu(sim, diagonal=1)[:, :, 1:]
+
+    logits_reshaped = logits.view(B * (2*K), 2*K - 1)
+    weight_reshaped = weight.view(B * (2*K), 2*K - 1)
+
+    log_probs = F.log_softmax(logits_reshaped / temperature, dim=-1)
+    loss = F.kl_div(log_probs, weight_reshaped, reduction='batchmean')
+
+    return loss
 
 
 
