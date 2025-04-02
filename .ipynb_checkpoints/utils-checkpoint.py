@@ -253,6 +253,11 @@ def extract_fixed_random_windows(x, w, k):
         torch.Tensor: Extracted windows of shape (batch_size, k, w, n_features).
     """
     batch_size, n_timestamps, n_features = x.shape
+
+    if w==n_timestamps:
+        full_window = x.unsqueeze(1).repeat(1, k, 1, 1)  # Shape: (batch_size, k, w, n_features)
+        return full_window
+        
     
     # Generate k random start indices (same for all samples)
     crop_start = np.random.choice(range(0, n_timestamps - w), size=k, replace=False)   # Shape: (k,)
@@ -345,3 +350,13 @@ def fast_batch_max_cross_corr(x):
     sim = max_cc.mean(dim=-1)  # Average over channels => B x 2K x 2K
 
     return sim
+
+def FFT_for_Period(x, k=2):
+    # [B, T, C]
+    xf = torch.fft.rfft(x, dim=1)
+    frequency_list = abs(xf).mean(0).mean(-1)
+    frequency_list[0] = 0
+    _, top_list = torch.topk(frequency_list, k)
+    top_list = top_list.detach().cpu().numpy()
+    period = x.shape[1] // top_list
+    return period, abs(xf).mean(-1)[:, top_list]
