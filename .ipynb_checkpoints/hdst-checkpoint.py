@@ -3,7 +3,7 @@ import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
 import numpy as np
 from models.encoder import HDEncoder2
-from utils import split_with_nan, centerize_vary_length_series,  extract_fixed_random_windows, torch_pad_with, torch_pad_nan
+from utils import split_with_nan, centerize_vary_length_series,  extract_fixed_random_windows, torch_pad_with, torch_pad_nan, FFT_for_Period
 from models.task_heads import DynamicCondPredHead
 from models.losses import hierarchical_contrastive_loss
 import time
@@ -91,13 +91,14 @@ class HDST:
         self.n_iters = 0
 
 
-    def fit(self, train_data, k, w, temperature=1, n_epochs=None, n_iters=None):
+    def fit(self, train_data, k, w=None,top_k=2, temperature=1, n_epochs=None, n_iters=None):
         ''' Training the HDST model.
         
         Args:
             train_data (numpy.ndarray): The training data. It should have a shape of (n_instance, n_timestamps, n_features). All missing data should be set to NaN.
             k (int) : Number of windows that randomly cropped while training.
-            w (int) : Number of time point of each window (window size).
+            w (int) : Number of time point of each window (window size). Using multi-scale if not specified.
+            top_k (int) : Numer of top scales
             n_epochs (Union[int, NoneType]): The number of epochs. When this reaches, the training stops.
             n_iters (Union[int, NoneType]): The number of iterations. When this reaches, the training stops. If both n_epochs and n_iters are not specified, a default setting would be used that sets n_iters to 200 for a dataset with size <= 100000, 600 otherwise.
             verbose (bool): Whether to print the training loss after each epoch.
@@ -150,49 +151,63 @@ class HDST:
                 if self.max_train_length is not None and x.size(1) > self.max_train_length:
                     window_offset = np.random.randint(x.size(1) - self.max_train_length + 1)
                     x = x[:, window_offset : window_offset + self.max_train_length]
+
+                if w==None:
+                    # Identify scales
+                    scale_list, scale_weight = FFT_for_Period(x, top_k)
+                    print(scale_list)
+                    # print(type(scale_list[0]))
+                else:
+                    scale_list=[w]
+                    scale_weight=[1]
+                    top_k=1
                 x = x.to(self.device)
+                loss=list()
 
-                
-                # randomly choose k windows of size w(batch-wise)
-                # print(x.shape)
-                x_windows=extract_fixed_random_windows(x, w, k) # (batch_size, k, w, n_features)
-                # print("x_windows:")
-                # print(x_windows.shape)
-                B, k, w, nf=x_windows.shape
-                x_windows_reshaped = x_windows.reshape(B * k, w, nf)  
+                for i in range(top_k):
+                    scale = scale_list[i]   
+                    # randomly choose k windows of size scale(batch-wise)
+                    # print(scale)
+                    x_windows=extract_fixed_random_windows(x, scale, k) # (batch_size, k, scale, n_features)
+                    # print("x_windows:")
+                    # print(x_windows.shape)
+                    B, _, _, nf=x_windows.shape
+                    x_windows_reshaped = x_windows.reshape(B * k, scale, nf)  
+    
+                    # original windows
+                    out_static, out_dynamic=self._net(x_windows_reshaped) # (batch_size*k, scale, out_dims)
+                    out_dim1 = out_static.size(-1)
+                    out_dim2 = out_dynamic.size(-1)
+                    out_static = out_static.reshape(B, k, scale, out_dim1)
+                    out_dynamic = out_dynamic.reshape(B, k, scale, out_dim2)
+    
+                    # shuffled windows
+                    shuffle_idx = torch.randperm(x_windows.shape[2])
+                    # consider shuffle each window using diffent shuffle_idx!!!!!!!!!!!!!!!!!!!!!
+                    shuffled_x_windows = x_windows_reshaped[:,shuffle_idx,:].contiguous()
+                    out_shuffled_static, _ = self._net(shuffled_x_windows)
+    
+                    out_shuffled_static = out_shuffled_static.reshape(B, k, scale, out_dim1)
+    
+                    optimizer.zero_grad()
+                    
+                    loss_scale = hierarchical_contrastive_loss(
+                        out_static,
+                        out_shuffled_static,
+                        out_dynamic,
+                        x_windows,
+                        dynamic_pred_task_head = self.dynamic_pred_task_head,
+                        weights = self.task_weights,
+                        temperature = temperature
+                    )
+                    loss.append(loss_scale)
 
-                # original windows
-                out_static, out_dynamic=self._net(x_windows_reshaped) # (batch_size*k, w, out_dims)
-                out_dim1 = out_static.size(-1)
-                out_dim2 = out_dynamic.size(-1)
-                out_static = out_static.reshape(B, k, w, out_dim1)
-                out_dynamic = out_dynamic.reshape(B, k, w, out_dim2)
-
-                # shuffled windows
-                shuffle_idx = torch.randperm(x_windows.shape[2])
-                # consider shuffle each window using diffent shuffle_idx!!!!!!!!!!!!!!!!!!!!!
-                shuffled_x_windows = x_windows_reshaped[:,shuffle_idx,:].contiguous()
-                out_shuffled_static, _ = self._net(shuffled_x_windows)
-
-                out_shuffled_static = out_shuffled_static.reshape(B, k, w, out_dim1)
-
-                optimizer.zero_grad()
-                
-                loss = hierarchical_contrastive_loss(
-                    out_static,
-                    out_shuffled_static,
-                    out_dynamic,
-                    x_windows,
-                    dynamic_pred_task_head = self.dynamic_pred_task_head,
-                    weights = self.task_weights,
-                    temperature = temperature
-                )
-                
-                loss.backward()
+                multi_scale_loss = sum(loss) / len(loss)
+                multi_scale_loss.backward()
                 optimizer.step()
                 self.net.update_parameters(self._net)
                     
-                cum_loss += loss.item()
+                cum_loss += multi_scale_loss.item()
                 n_epoch_iters += 1
 
                 # print(f"n_epoch_iters #{n_epoch_iters}: loss={loss.item()}")
