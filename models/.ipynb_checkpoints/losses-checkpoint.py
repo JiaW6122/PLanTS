@@ -149,8 +149,11 @@ def global_variant_constrastive_loss_v2(u1, x1, temperature):
 
 def global_variant_constrastive_loss_v2_faster(u1, x1, temperature):
     B, K, W, C = x1.shape
+    end=W
+    if W%2==1:
+        end=W-1
     x_h = x1[:, :, 0:W//2, :]
-    x_f = x1[:, :, W//2:, :]
+    x_f = x1[:, :, W//2:end, :]
     x = torch.cat([x_h, x_f], dim=1)  # B x 2K x L x C
 
     # Efficient similarity matrix
@@ -161,7 +164,7 @@ def global_variant_constrastive_loss_v2_faster(u1, x1, temperature):
     weight = F.softmax(weight / temperature, dim=-1)
 
     u_h = u1[:, :, 0:W//2, :]
-    u_f = u1[:, :, W//2:, :]
+    u_f = u1[:, :, W//2:end, :]
     u_h_static = torch.mean(u_h, dim=2)
     u_f_static = torch.mean(u_f, dim=2)
     u = torch.cat([u_h_static, u_f_static], dim=1)  # B x 2K x D
@@ -190,11 +193,14 @@ def dynamic_cond_pred_loss(u1,v1,dynamic_pred_task_head):
         v1 : Dynamic time-series representations of original time series windows. # (batch_size, k, w, out_dims2)
     '''
     B, w = u1.size(0), u1.size(2) 
+    end=w
+    if w%2==1:
+        end=w-1
     u_h = u1[:, :, 0:w//2, :] # history windows  (B, k, w//2, out_d1)
-    u_f = u1[:, :, w//2:, :] # future windows  (B, k, w//2, out_d1)
+    u_f = u1[:, :, w//2:end, :] # future windows  (B, k, w//2, out_d1)
 
     v_h = v1[:, :, 0:w//2, :] # history windows  (B, k, w//2, out_d2)
-    v_f = v1[:, :, w//2:, :] # future windows  (B, k, w//2, out_d2)
+    v_f = v1[:, :, w//2:end, :] # future windows  (B, k, w//2, out_d2)
 
     x = torch.cat((u_h,v_h), dim=3) #(B, k, w//2, out_d1+out_d2)
     y = v_f

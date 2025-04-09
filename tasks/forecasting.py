@@ -3,8 +3,6 @@ import time
 from . import _eval_protocols as eval_protocols
 from sklearn.preprocessing import StandardScaler
 
-from utils import find_closest_train_segment
-
 def generate_pred_samples(features, data, pred_len, drop=0):
     n = data.shape[1]
     features = features[:, :-pred_len]

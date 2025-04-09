@@ -27,7 +27,7 @@ class HDST:
         max_train_length=None,
         temporal_unit=0,
         task_weights=None,
-        mask_mode=None,
+        mask_mode='binomial',
         after_iter_callback=None,
         after_epoch_callback=None
     ):
@@ -126,8 +126,11 @@ class HDST:
         train_data = train_data[~np.isnan(train_data).all(axis=2).all(axis=1)]
         
         print(f"Training data shape: {train_data.shape}")
+
         
         train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+
+        # print(len(train_dataset))
         train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
         optimizer = torch.optim.AdamW(self._net.parameters(), lr=self.lr)
         
@@ -148,6 +151,7 @@ class HDST:
                 
                 # Batch is a 1 element list
                 x = batch[0]
+                # print(x.shape)
                 if self.max_train_length is not None and x.size(1) > self.max_train_length:
                     window_offset = np.random.randint(x.size(1) - self.max_train_length + 1)
                     x = x[:, window_offset : window_offset + self.max_train_length]
@@ -155,7 +159,7 @@ class HDST:
                 if w==None:
                     # Identify scales
                     scale_list, scale_weight = FFT_for_Period(x, top_k)
-                    print(scale_list)
+                    # print(scale_list)
                     # print(type(scale_list[0]))
                 else:
                     scale_list=[w]
@@ -202,6 +206,7 @@ class HDST:
                     )
                     loss.append(loss_scale)
 
+                # print(loss)
                 multi_scale_loss = sum(loss) / len(loss)
                 multi_scale_loss.backward()
                 optimizer.step()
@@ -428,6 +433,9 @@ class HDST:
         '''
         state_dict = torch.load(fn, map_location=self.device)
         self.net.load_state_dict(state_dict)
+
+    def eval(self):
+        self.net.eval()
 
 
 
