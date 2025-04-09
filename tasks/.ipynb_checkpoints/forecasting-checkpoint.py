@@ -3,8 +3,6 @@ import time
 from . import _eval_protocols as eval_protocols
 from sklearn.preprocessing import StandardScaler
 
-from utils import find_closest_train_segment
-
 def generate_pred_samples(features, data, pred_len, drop=0):
     n = data.shape[1]
     features = features[:, :-pred_len]
@@ -42,7 +40,6 @@ def eval_forecasting(
         sliding_padding=padding,
         batch_size=64,
     )
-    ts2vec_infer_time = time.time() - t
 
 
     train_repr = all_repr[:, train_slice]
@@ -94,7 +91,6 @@ def eval_forecasting(
         
     eval_res = {
         'ours': ours_result,
-        'ts2vec_infer_time': ts2vec_infer_time,
         'lr_train_time': lr_train_time,
         'lr_infer_time': lr_infer_time
     }

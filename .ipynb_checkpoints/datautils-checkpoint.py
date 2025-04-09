@@ -179,3 +179,14 @@ def gen_ano_train_data(all_train_data):
         pretrain_data.append(train_data)
     pretrain_data = np.expand_dims(np.stack(pretrain_data), 2)
     return pretrain_data
+
+def load_HAR(name):
+    x_train=pkl_load(f'datasets/{name}/x_train.pkl')
+    state_train=pkl_load(f'datasets/{name}/state_train.pkl')
+    x_test=pkl_load(f'datasets/{name}/x_test.pkl')
+    state_test=pkl_load(f'datasets/{name}/state_test.pkl')
+    return x_train, state_train, x_test, state_test
+
+
+
+    

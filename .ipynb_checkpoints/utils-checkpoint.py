@@ -181,43 +181,6 @@ def torch_kl(a, b):
     return a_nozero * (torch.log(a_nozero) - torch.log(b_nozero))
 
 
-def find_closest_train_segment(train_data, test_data, step=1, squared_dist=True):
-    """
-        Find the starting indices of segments in the training dataset with the smallest squared
-        Euclidean distances to corresponding segments in the test dataset.
-
-        Parameters:
-        - train_data: 3D NumPy array (B: batches, T: timesteps, _: features). Must have the same batch size as the test set.
-        - test_data: 3D NumPy array (B: batches, t: timesteps, _: features).  Must have the same batch size as the train set.
-        - step: Optional parameter specifying the step size for iterating over the training data. Default is 1.
-        - squared_dist: Optional parameter specifying whether to compute squared distances. Default is True.
-
-        Returns:
-        - time_indices: 3D NumPy array containing the starting time indices for segments in the
-                        training dataset with the smallest squared Euclidean distances to the test dataset.
-                        Shape: (B, 1, t), where B is the number of batches and t is the number of timesteps in the test dataset.
-    """
-    B, T, _ = train_data.shape
-    t = test_data.shape[1]
-
-    if t == T:
-        return np.tile(np.arange(T), (B, 1))[..., None]
-
-    dist = np.zeros((B, (T - t) // step))
-    for i in range(0, T - t, step):
-        if squared_dist:
-            dist[:, i] = np.abs(np.mean(np.sum((train_data[:, i: i + t, :] - test_data[:, :, :]) ** 2, axis=1), axis=1))
-        else:
-            dist[:, i] = np.abs(np.mean(np.sum(train_data[:, i: i + t, :] - test_data[:, :, :], axis=1), axis=1))
-
-        min_dist = np.argmin(dist, axis=1)
-        seq_starts = (step * min_dist)[..., None]
-    
-    # Get time indices for each segment
-    time_indices = (np.arange(t) + seq_starts).astype(np.int32)[..., None]
-    return time_indices
-
-
 def upsample_minority_class(train_repr, train_labels, upsample_ratio=1.0):
     pos_idcs = np.where(train_labels == 1.0)[0]
     neg_idcs = np.where(train_labels == 0.0)[0]
@@ -351,11 +314,25 @@ def fast_batch_max_cross_corr(x):
 
     return sim
 
-def FFT_for_Period(x, k=2):
+def FFT_for_Period(x, k=2,period_limit=500):
     # [B, T, C]
+    B, T, C = x.shape
     xf = torch.fft.rfft(x, dim=1)
+    # freq_idx = torch.arange(xf.shape[0])  # index of each frequency bin
+    # freqs = torch.fft.rfftfreq(T, d=1.0)
+    # print(freqs)
     frequency_list = abs(xf).mean(0).mean(-1)
     frequency_list[0] = 0
+
+    # min_freq_idx = T // period_limit  # anything lower than this freq = too long of a period
+    # valid_mask = freq_idx >= min_freq_idx
+    # frequency_list[~valid_mask] = 0
+    # print(xf[0:10])
+    # Remove high-frequency noise
+    # valid_mask = freqs <= freqs.max() * high_freq_ratio
+    # print(valid_mask)
+    # frequency_list_filtered = frequency_list.clone()
+    # frequency_list_filtered[~valid_mask] = 0
     _, top_list = torch.topk(frequency_list, k)
     top_list = top_list.detach().cpu().numpy()
     period = x.shape[1] // top_list
