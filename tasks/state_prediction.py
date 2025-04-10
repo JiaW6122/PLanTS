@@ -7,6 +7,7 @@ from sklearn.metrics import confusion_matrix
 from sklearn.metrics import average_precision_score
 import os
 import matplotlib.pyplot as plt
+import random
 
 class StateClassifier(torch.nn.Module):
     def __init__(self, input_size, output_size):
@@ -25,27 +26,33 @@ class StateClassifier(torch.nn.Module):
 def create_dataset(train_data, train_labels, test_data, test_labels, window_size=4,batch_size=100):
     train_data = np.transpose(train_data, (0, 2, 1)) 
     test_data = np.transpose(test_data, (0, 2, 1))
-    n_train = int(0.8*len(train_data))
-    n_valid = len(train_data) - n_train
-    n_test = len(test_data)
-    x_train, y_train = train_data[:n_train], train_labels[:n_train]
-    x_valid, y_valid = train_data[n_train:], train_labels[n_train:]
-    x_test = test_data
-    y_test = test_labels
+    T = train_data.shape[-1]
+    x_window = np.split(train_data[:, :, :window_size * (T // window_size)], (T // window_size), -1)
+    y_window = np.concatenate(np.split(train_labels[:, :window_size * (T // window_size)], (T // window_size), -1), 0).astype(int)
+    x_window = torch.Tensor(np.concatenate(x_window, 0))
+    y_window = torch.Tensor(np.array([np.bincount(yy).argmax() for yy in y_window]))
 
-    datasets = []
-    for set in [(x_train, y_train, n_train), (x_test, y_test, n_test), (x_valid, y_valid, n_valid)]:
-        T = set[0].shape[-1]
-        windows = np.split(set[0][:, :, :window_size * (T // window_size)], (T // window_size), -1)
-        windows = np.concatenate(windows, 0)
-        labels = np.split(set[1][:, :window_size * (T // window_size)], (T // window_size), -1)
-        labels = np.round(np.mean(np.concatenate(labels, 0), -1))
-        datasets.append(data.TensorDataset(torch.Tensor(windows), torch.Tensor(labels)))
+    x_window_test = np.split(test_data[:, :, :window_size * (T // window_size)], (T // window_size), -1)
+    y_window_test = np.concatenate(np.split(test_labels[:, :window_size * (T // window_size)], (T // window_size), -1), 0).astype(int)
+    x_window_test = torch.Tensor(np.concatenate(x_window_test, 0))
+    y_window_test = torch.Tensor(np.array([np.bincount(yy).argmax() for yy in y_window_test]))
 
-    trainset, testset, validset = datasets[0], datasets[1], datasets[2]
-    train_loader = data.DataLoader(trainset, batch_size=batch_size, shuffle=True)
-    valid_loader = data.DataLoader(validset, batch_size=batch_size, shuffle=True)
-    test_loader = data.DataLoader(testset, batch_size=batch_size, shuffle=True)
+    testset = torch.utils.data.TensorDataset(x_window_test, y_window_test)
+    test_loader = torch.utils.data.DataLoader(testset, batch_size=100, shuffle=True)
+
+    shuffled_inds = list(range(len(x_window)))
+    random.shuffle(shuffled_inds)
+    x_window = x_window[shuffled_inds]
+    y_window = y_window[shuffled_inds]
+    n_train = int(0.7*len(x_window))
+    X_train, X_test = x_window[:n_train], x_window[n_train:]
+    y_train, y_test = y_window[:n_train], y_window[n_train:]
+
+    trainset = torch.utils.data.TensorDataset(X_train, y_train)
+    validset = torch.utils.data.TensorDataset(X_test, y_test)
+
+    train_loader = torch.utils.data.DataLoader(trainset, batch_size=200, shuffle=False)
+    valid_loader = torch.utils.data.DataLoader(validset, batch_size=200, shuffle=False)
 
     return train_loader, valid_loader, test_loader
 
@@ -67,9 +74,10 @@ def run_epoch(model, classifier, data_loader, is_train, lr=0.001):
         x=x.cpu().detach().numpy()
         x=np.transpose(x, (0, 2, 1)) 
         
-        encoding=model.encode(x)
+        encoding=model.encode(x, encoding_window='full_series')
         # print(encoding.shape)
         encoding=torch.Tensor(encoding).to(device)
+        classifier=classifier.to(device)
         prediction=classifier(encoding)
         state_prediction = torch.argmax(prediction, dim=1)
         loss = loss_fn(prediction, y.long())
@@ -101,7 +109,7 @@ def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs
     train_accs, test_accs = [], []
     for epoch in range(n_epochs):
         train_loss, train_acc, train_auc, train_auprc, _= run_epoch(model, classifier, train_loader, True, lr)
-        test_loss, test_acc, test_auc, test_auprc, _ = run_epoch(model, classifier, False)
+        test_loss, test_acc, test_auc, test_auprc, _ = run_epoch(model, classifier, valid_loader, False)
         train_losses.append(train_loss)
         test_losses.append(test_loss)
         train_accs.append(train_acc)
@@ -119,9 +127,9 @@ def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs
                     'best_accuracy': best_auc
                 }
             data_type="UCI_HAR"
-            if not os.path.exists( './ckpt/classifier_test/%s'%data_type):
-                os.mkdir( './ckpt/classifier_test/%s'%data_type)
-            torch.save(state, './ckpt/classifier_test/%s/%s_checkpoint_%d.pth.tar'%(data_type, type))
+            if not os.path.exists( 'ckpt/classifier_test/%s'%data_type):
+                os.mkdir( 'ckpt/classifier_test/%s'%data_type)
+            torch.save(state, 'ckpt/classifier_test/%s/%s_checkpoint.pth.tar'%(data_type, type))
     # Save performance plots
     plt.figure()
     plt.plot(np.arange(n_epochs), train_losses, label="train Loss")
@@ -129,7 +137,7 @@ def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs
 
     plt.plot(np.arange(n_epochs), train_accs, label="train Acc")
     plt.plot(np.arange(n_epochs), test_accs, label="test Acc")
-    plt.savefig(os.path.join("./plots/%s" % data_type, "classification_%s_%d.pdf"%(type)))
+    plt.savefig(os.path.join("figures/%s" % data_type, "classification_%s.pdf"%(type)))
     return best_acc, best_auc, best_aupc
 
 
@@ -147,8 +155,8 @@ def eval_state_prediction(model, train_data, train_labels, test_data, test_label
     ###test
     _, test_acc, test_auc, test_aupc,_ =run_epoch(model, classifier, test_loader, False)
     print('=======> Performance Summary:')
-    print('State Prediction: \t Accuracy:\t AUC: \t AUPRC:'%
-          (100 * test_acc, 100 * test_auc, test_aupc))
+    print(f'State Prediction:\tAccuracy: {100 * test_acc:.2f}\tAUC: {100 * test_auc:.2f}\tAUPRC: {test_aupc:.2f}')
+
     
 
 
