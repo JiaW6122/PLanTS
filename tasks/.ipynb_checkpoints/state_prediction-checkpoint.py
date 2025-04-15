@@ -137,6 +137,8 @@ def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs
 
     plt.plot(np.arange(n_epochs), train_accs, label="train Acc")
     plt.plot(np.arange(n_epochs), test_accs, label="test Acc")
+    plt.legend()
+
     plt.savefig(os.path.join("figures/%s" % data_type, "classification_%s.pdf"%(type)))
     return best_acc, best_auc, best_aupc
 
@@ -158,7 +160,6 @@ def eval_state_prediction(model, train_data, train_labels, test_data, test_label
     print(f'State Prediction:\tAccuracy: {100 * test_acc:.2f}\tAUC: {100 * test_auc:.2f}\tAUPRC: {test_aupc:.2f}')
 
     
-
 
 
 

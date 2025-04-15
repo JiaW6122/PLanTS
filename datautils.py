@@ -5,6 +5,9 @@ from sklearn.preprocessing import StandardScaler
 
 from utils import pkl_load, pad_nan_to_target
 from scipy.io.arff import loadarff
+import pickle
+import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 
 def load_UCR(dataset):
     train_file = os.path.join('datasets/UCR', dataset, dataset + "_TRAIN.tsv")
@@ -188,5 +191,62 @@ def load_HAR(name):
     return x_train, state_train, x_test, state_test
 
 
+def visiualize_HAR(name,subject_id=1):
+    with open('datasets/HAR_data/x_train.pkl', 'rb') as f:
+        x_train = pickle.load(f)
+    with open('datasets/HAR_data/state_train.pkl', 'rb') as f:
+        state_train = pickle.load(f)
+    activity = pd.read_csv('datasets/HAR_data/activity_labels.txt',
+                           header=None,
+                           sep=' ',
+                           names=['index', 'feature'])
+    features = pd.read_csv('datasets/HAR_data/features.txt',
+                           header=None,
+                           sep=' ',
+                           names=['index', 'feature'])
+    x = x_train[subject_id]          # shape: (561, T)
+    y = state_train[subject_id] 
+    activity_labels = list(activity['feature'])
+
+    # Assign fixed colors for activities (consistent coloring)
+    activity_colors = {
+        i: f'C{i}' for i in range(len(activity_labels))
+    }
+    
+    T=x_train.shape[2]
+    time=np.arange(T)
+    plt.figure(figsize=(15, 6))
+    for i in range(15):
+        plt.plot(time, x[i],label=features['feature'][i])
+    # Add background color blocks for activity labels
+    current_label = y[0]
+    start = 0
+    for t in range(1, T):
+        if y[t] != current_label:
+            plt.axvspan(start, t, color=activity_colors[current_label], alpha=0.15)
+            start = t
+            current_label = y[t]
+    plt.axvspan(start, T, color=activity_colors[current_label], alpha=0.15)
+    
+    # Add a custom legend for activity labels
+    legend_patches = [
+        Patch(facecolor=activity_colors[i], edgecolor='none', alpha=0.3, label=activity_labels[i])
+        for i in range(len(activity_labels))
+    ]
+    legend_patches = [
+        Patch(facecolor=activity_colors[i], edgecolor='none', alpha=0.3, label=activity_labels[i])
+        for i in range(len(activity_labels))
+    ]
+    activity_legend = plt.legend(handles=legend_patches, title="Activity", loc='lower left', fontsize=9)
+    plt.gca().add_artist(activity_legend)
+    plt.title(f"Subject {subject_id} - Overlaid Features with Activity Background")
+    plt.xlabel("Time steps")
+    plt.ylabel("Feature values")
+    plt.legend(loc='upper right')
+    plt.tight_layout()
+    plt.show()
+
+
 
     
+        
