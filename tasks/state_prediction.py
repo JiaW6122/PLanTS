@@ -8,6 +8,10 @@ from sklearn.metrics import average_precision_score
 import os
 import matplotlib.pyplot as plt
 import random
+from sklearn.decomposition import PCA
+import seaborn as sns
+import pandas as pd
+from sklearn.manifold import TSNE
 
 class StateClassifier(torch.nn.Module):
     def __init__(self, input_size, output_size):
@@ -159,7 +163,77 @@ def eval_state_prediction(model, train_data, train_labels, test_data, test_label
     print('=======> Performance Summary:')
     print(f'State Prediction:\tAccuracy: {100 * test_acc:.2f}\tAUC: {100 * test_auc:.2f}\tAUPRC: {test_aupc:.2f}')
 
-    
+
+def tracking_encoding(model, data, labels, subject_id=1, window_size=4, sliding_gap=5):
+    data = np.transpose(data, (0, 2, 1)) 
+    sample = data[subject_id]
+    label = labels[subject_id]
+    T = data.shape[-1]
+    encodings = []
+    windows_label = []
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # model.to(device)
+    model.eval()
+    for t in range(window_size//2,T-window_size//2,sliding_gap):
+        windows = sample[:, t-(window_size//2):t+(window_size//2)]
+        windows_label.append((np.bincount(label[t-(window_size//2):t+(window_size//2)].astype(int)).argmax()))
+        inputs=np.expand_dims(windows,axis=0)
+        inputs=np.transpose(inputs, (0, 2, 1)) 
+        encoding=model.encode(inputs, encoding_window='full_series')
+        encoding=torch.from_numpy(encoding).to(torch.float)
+        # print(encoding.squeeze(0).shape)
+        encodings.append(encoding.squeeze(0))
+    for t in range(window_size//(2*sliding_gap)):
+        # fix offset
+        encodings.append(encodings[-1])
+        encodings.insert(0, encodings[0])
+    # print(len(encodings))
+    encodings = torch.stack(encodings, 0)
+    # print(encodings.shape)
+    pca = PCA(n_components=5)
+    embedding = pca.fit_transform(encodings.detach().cpu().numpy())
+
+    f, axs = plt.subplots(2)  # , gridspec_kw={'height_ratios': [1, 2]})
+    f.set_figheight(10)
+    f.set_figwidth(27)
+    # print(sample.shape)
+    for feat in range(min(sample.shape[0], 10)):
+        sns.lineplot(x=np.arange(sample.shape[1]), y=sample[feat], ax=axs[0])
+
+    axs[0].set_title('Time series Sample Trajectory', fontsize=30, fontweight='bold')
+    axs[0].xaxis.set_tick_params(labelsize=22)
+    axs[0].yaxis.set_tick_params(labelsize=22)
+    axs[-1].xaxis.set_tick_params(labelsize=22)
+    axs[-1].yaxis.set_tick_params(labelsize=22)
+    axs[-1].set_ylabel('Encoding dimensions', fontsize=28)
+    axs[0].margins(x=0)
+    axs[0].grid(False)
+    t_0 = 0
+    for t in range(1, label.shape[-1]):
+        if label[t]==label[t-1]:
+            continue
+        else:
+            axs[0].axvspan(t_0, min(t+1, label.shape[-1]-1), facecolor=['y', 'g', 'b', 'r', 'c', 'm'][int(label[t_0])], alpha=0.5)
+            t_0 = t
+    axs[0].axvspan(t_0, label.shape[-1]-1 , facecolor=['y', 'g', 'b', 'r'][int(label[t_0])], alpha=0.5)
+    axs[-1].set_title('Encoding Trajectory', fontsize=30, fontweight='bold')
+    sns.heatmap(embedding.T, cbar=False, linewidth=0.5, ax=axs[-1], linewidths=0.05, xticklabels=False)
+    f.tight_layout()
+    plt.show()
+    # sns.heatmap(encodings.detach().cpu().numpy().T, linewidth=0.5)
+    plt.savefig(os.path.join("figures/UCI_HAR/embedding_trajectory_hm.pdf"))
+
+
+    tsne = TSNE(n_components=2)
+    embedding = tsne.fit_transform(encodings.detach().cpu().numpy())
+    d = {'f1':embedding[:,0], 'f2':embedding[:,1], 'state':windows_label}#, 'label':windows_label}
+    df = pd.DataFrame(data=d)
+    fig, ax = plt.subplots()
+    ax.set_title("Trajectory")
+    # sns.jointplot(x="f1", y="f2", data=df, kind="kde", size='time', hue='label')
+    sns.scatterplot(x="f1", y="f2", data=df, hue="state")
+    plt.show()
+    plt.savefig(os.path.join("figures/UCI_HAR/embedding_trajectory_scatter.pdf"))
 
 
 
