@@ -217,13 +217,20 @@ def extract_fixed_random_windows(x, w, k):
     """
     batch_size, n_timestamps, n_features = x.shape
 
-    if w==n_timestamps:
+    if w>=n_timestamps:
         full_window = x.unsqueeze(1).repeat(1, k, 1, 1)  # Shape: (batch_size, k, w, n_features)
         return full_window
         
     
     # Generate k random start indices (same for all samples)
-    crop_start = np.random.choice(range(0, n_timestamps - w), size=k, replace=False)   # Shape: (k,)
+    replace=False
+    if n_timestamps-w<k:
+        replace=True
+    # print(n_timestamps)
+    # print(k)
+    # print(replace)
+    crop_start = np.random.choice(range(0, n_timestamps - w), size=k, replace=replace)   # Shape: (k,)
+    # print(crop_start)
     # print("crop start")
     # print(crop_start)
 
@@ -336,4 +343,19 @@ def FFT_for_Period(x, k=2,period_limit=500):
     _, top_list = torch.topk(frequency_list, k)
     top_list = top_list.detach().cpu().numpy()
     period = x.shape[1] // top_list
-    return period, abs(xf).mean(-1)[:, top_list]
+    weight=abs(xf).mean(-1)[:, top_list]
+    
+
+    # remove small period (==2 or 3)
+    if all(p in (2, 3) for p in period):
+        period=[4]
+        weight=[1]
+    else:
+        period, weight = zip(*[(p, w) for p, w in zip(period, weight) if (p != 2 and p !=3)])
+        # Convert back to lists (zip returns tuples)
+        period = list(period)
+        weight = list(weight)
+    
+        
+    
+    return period, weight

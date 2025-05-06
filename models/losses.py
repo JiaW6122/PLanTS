@@ -14,19 +14,30 @@ def hierarchical_contrastive_loss(u1,u2,v1,x1,dynamic_pred_task_head,weights,tem
         dynamic_pred_task_head: Task head of conditioned dynamic trends forecasting.
         weights: Loss weights.
     """
-    loss = torch.tensor(0., device=u1.device)
+    # loss = torch.tensor(0., device=u1.device)
+    loss_terms = []
     
     if weights['local_static_contrast'] != 0:
-        loss += weights['local_static_contrast'] * local_static_contrastive_loss(u1, u2)
+        # loss += weights['local_static_contrast'] * local_static_contrastive_loss(u1, u2)
+        # loss = loss+ weights['local_static_contrast'] * local_soft_static_contrastive_loss(u1,x1,temperature)
+        loss_terms.append(weights['local_static_contrast'] * local_soft_static_contrastive_loss(u1,x1,temperature))
+        # print(weights['local_static_contrast'] * local_soft_static_contrastive_loss(u1,x1,temperature))
+        
     if weights['global_vatiant_contrast'] != 0:
         # global_loss = global_variant_constrastive_loss(u1)
         global_loss = global_variant_constrastive_loss_v2_faster(u1,x1,temperature)
-        loss += weights['global_vatiant_contrast'] * global_loss
+        loss_terms.append(weights['global_vatiant_contrast'] * global_loss)
+        # loss =loss+ weights['global_vatiant_contrast'] * global_loss
+        # print(weights['global_vatiant_contrast'] * global_loss)
     if weights['dynamic_trend_pred'] != 0:
         dynamic_loss = dynamic_cond_pred_loss(u1, v1, dynamic_pred_task_head)
-        loss += weights['dynamic_trend_pred'] * dynamic_loss 
+        loss_terms.append(weights['dynamic_trend_pred'] * dynamic_loss)
+        # loss =loss+ weights['dynamic_trend_pred'] * dynamic_loss 
+        # print(weights['dynamic_trend_pred'] * dynamic_loss)
+    # print(loss_terms)
 
-    return loss
+    return sum(loss_terms)
+
 
 
 def static_contrastive_loss(u1,u2):
@@ -75,6 +86,45 @@ def local_static_contrastive_loss(u1,u2):
     # identify positive pairs
     i = torch.arange(B, device=u1.device)
     loss = (logits[:, i, B+i-1].mean() + logits[:, B+i, i].mean())/2
+    return loss
+
+def local_soft_static_contrastive_loss(u1,x1,temperature):
+    """
+        Local Soft Static Contrastive loss.
+
+    Args:
+        u1 : Static time-series representations of original time series windows. # (batch_size, k, w, out_dims)
+        x1 : Original time series windows. # (batch_size, k, w, C)
+    """
+    B, K, W, O = u1.shape
+    B, K, W, C = x1.shape
+    u1_reshaped = u1.permute(1, 0, 2, 3) #  K, B, W, O
+    x1_reshaped = x1.permute(1, 0, 2, 3)
+    S = fast_batch_max_cross_corr(x1_reshaped)  # K x B x B
+
+    weight = torch.tril(S, diagonal=-1)[:, :, :-1]
+    weight += torch.triu(S, diagonal=1)[:, :, 1:]
+    weight = F.softmax(weight / temperature, dim=-1)
+
+    u1_flat = u1_reshaped.reshape(K, B, W*O)
+    # print(u1_flat.shape)
+    # print(u1_flat.permute(0, 2, 1).shape)
+    sim = torch.matmul(u1_flat, u1_flat.permute(0, 2, 1)) # K x B x B
+    # print(sim.shape)
+
+    logits = torch.tril(sim, diagonal=-1)[:, :, :-1]    # K * B * (B-1)
+    logits += torch.triu(sim, diagonal=1)[:, :, 1:]
+
+    # print(logits.shape)
+    # print(weight.shape)
+
+    logits_reshaped = logits.view(B * K, B-1)  # (B*K, K-1)
+    weight_reshaped = weight.view(B * K, B-1)  
+    criterion = nn.CrossEntropyLoss()
+    # print(logits_reshaped)
+    # print(weight_reshaped)
+    loss = criterion(logits_reshaped, weight_reshaped)
+
     return loss
 
 def global_variant_constrastive_loss(u1):
