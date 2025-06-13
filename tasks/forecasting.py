@@ -21,7 +21,8 @@ def cal_metrics(pred, target):
     
 def eval_forecasting(
         model,
-        data,
+        data_all,
+        n_channels,
         train_slice,
         valid_slice,
         test_slice,
@@ -34,21 +35,23 @@ def eval_forecasting(
     t = time.time()
 
     all_repr = model.encode(
-        data[:, :test_slice.stop],
+        data_all[:, :test_slice.stop],
+        n_channels,
         causal=True,
         sliding_length=1,
         sliding_padding=padding,
         batch_size=64,
     )
 
-
     train_repr = all_repr[:, train_slice]
     valid_repr = all_repr[:, valid_slice]
     test_repr = all_repr[:, test_slice]
+
+    x_data=data_all[:,:,:n_channels]
     
-    train_data = data[:, train_slice, :]
-    valid_data = data[:, valid_slice, :]
-    test_data = data[:, test_slice, :]
+    train_data = x_data[:, train_slice, :]
+    valid_data = x_data[:, valid_slice, :]
+    test_data = x_data[:, test_slice, :]
     
     ours_result = {}
     lr_train_time = {}
@@ -70,10 +73,26 @@ def eval_forecasting(
         ori_shape = test_data.shape[0], -1, pred_len, test_data.shape[2]
         test_pred = test_pred.reshape(ori_shape)
         test_labels = test_labels.reshape(ori_shape)
+        # print(test_pred.shape)
+        # print(test_labels.shape)
         
         if test_data.shape[0] > 1:
-            test_pred_inv = scaler.inverse_transform(test_pred.swapaxes(0, 3)).swapaxes(0, 3)
-            test_labels_inv = scaler.inverse_transform(test_labels.swapaxes(0, 3)).swapaxes(0, 3)
+            test_pred = test_pred.swapaxes(0, 3)
+            test_labels = test_labels.swapaxes(0, 3)
+            # Reshape for inverse transform
+            a, b, c, d = test_pred.shape
+            test_pred_reshaped = test_pred.reshape(-1, d)  # Shape: (a * b * c, d)
+            test_labels_reshaped = test_labels.reshape(-1, d)
+            
+            # Inverse transform
+            test_pred_inv = scaler.inverse_transform(test_pred_reshaped).reshape(a, b, c, d)
+            test_labels_inv = scaler.inverse_transform(test_labels_reshaped).reshape(a, b, c, d)
+
+            test_pred_inv = test_pred_inv.swapaxes(0, 3)
+            test_labels_inv = test_labels_inv.swapaxes(0, 3)
+
+            # test_pred_inv = scaler.inverse_transform(test_pred.swapaxes(0, 3)).swapaxes(0, 3)
+            # test_labels_inv = scaler.inverse_transform(test_labels.swapaxes(0, 3)).swapaxes(0, 3)
         else:
             test_pred_inv = scaler.inverse_transform(test_pred.reshape(-1, test_pred.shape[3])).reshape(ori_shape)
             test_labels_inv = scaler.inverse_transform(test_labels.reshape(-1, test_labels.shape[3])).reshape(ori_shape)

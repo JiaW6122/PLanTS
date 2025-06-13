@@ -5,6 +5,7 @@ import torch
 import random
 from datetime import datetime
 from sklearn.utils import resample
+from tslearn.metrics import cdist_dtw
 
 def get_dataset_names(dataset_gp):
     raw_list = [x[0].split('/')[2] for x in os.walk(f'datasets/{dataset_gp}/')]
@@ -321,6 +322,25 @@ def fast_batch_max_cross_corr(x):
 
     return sim
 
+
+def fast_batch_dtw_tslearn_cdist(x,temperature=1):
+    """
+    x: (B, 2K, L, C)
+    """
+    B, N, L, C = x.shape
+    sim = torch.zeros(B, N, N)
+
+
+    for b in range(B):
+        x_b = x[b].detach().cpu().numpy()  # (2K, L, C)
+        dist_matrix = cdist_dtw(x_b)  # (2K, 2K)
+        # sim[b] = -torch.tensor(dist_matrix)
+        sim[b] = torch.exp(-torch.tensor(dist_matrix) / temperature)
+
+    return sim.to(x.device)
+
+
+
 def FFT_for_Period(x, k=2,period_limit=500):
     # [B, T, C]
     B, T, C = x.shape
@@ -344,14 +364,16 @@ def FFT_for_Period(x, k=2,period_limit=500):
     top_list = top_list.detach().cpu().numpy()
     period = x.shape[1] // top_list
     weight=abs(xf).mean(-1)[:, top_list]
+    # print(period)
     
 
     # remove small period (==2 or 3)
     if all(p in (2, 3) for p in period):
-        period=[4]
+        period=[10]
         weight=[1]
     else:
         period, weight = zip(*[(p, w) for p, w in zip(period, weight) if (p != 2 and p !=3)])
+        # print(period)
         # Convert back to lists (zip returns tuples)
         period = list(period)
         weight = list(weight)

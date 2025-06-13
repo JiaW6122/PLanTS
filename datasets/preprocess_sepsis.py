@@ -180,7 +180,7 @@ if __name__ == "__main__":
 
     print("Processing may take a few minutes")
 
-    sepsis_path = '/home/adrien/Data/Sepsis/raw_data/training/'
+    sepsis_path = 'Sepsis/training/'
     #sepsis_path = '/home/adrien/Data/Test_Sepsis/physionet.org/files/challenge-2019/1.0.0/training/'
 
     print(sepsis_path)

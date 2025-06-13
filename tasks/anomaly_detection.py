@@ -92,6 +92,7 @@ def np_shift(arr, num, fill_value=np.nan):
 
 def eval_anomaly_detection(
         model,
+        n_channels,
         all_train_data,
         all_train_labels,
         all_train_timestamps,
@@ -106,6 +107,7 @@ def eval_anomaly_detection(
     def encode_data_wm(data):
         return model.encode(
                 data.reshape(1, -1, 1),
+                n_channels,
                 mask='mask_last',
                 causal=True,
                 sliding_length=1,
@@ -116,6 +118,7 @@ def eval_anomaly_detection(
     def encode_data_wom(data):
         return model.encode(
                 data.reshape(1, -1, 1),
+                n_channels,
                 causal=True,
                 sliding_length=1,
                 sliding_padding=200,

@@ -53,3 +53,21 @@ class DilatedConvEncoder(nn.Module):
         
     def forward(self, x):
         return self.net(x)
+
+class DilatedConvDecoder(nn.Module):
+    def __init__(self, in_channels, channels, kernel_size):
+        super().__init__()
+        L = len(channels)
+        self.net = nn.Sequential(*[
+            ConvBlock(
+                in_channels if i == 0 else channels[i - 1],
+                channels[i],
+                kernel_size=kernel_size,
+                dilation=2**(L - i - 1),  # reverse order
+                final=(i == L - 1)
+            )
+            for i in range(L)
+        ])
+        
+    def forward(self, x):
+        return self.net(x)

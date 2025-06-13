@@ -8,6 +8,9 @@ from scipy.io.arff import loadarff
 import pickle
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
+from timefeatures import time_features
+import s3fs
+import io
 
 def load_UCR(dataset):
     train_file = os.path.join('datasets/UCR', dataset, dataset + "_TRAIN.tsv")
@@ -76,33 +79,48 @@ def load_UCR(dataset):
     return train[..., np.newaxis], train_labels, test[..., np.newaxis], test_labels
 
 
-def load_UEA(dataset, normalize=True):
-    train_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TRAIN.arff')[0]
-    test_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TEST.arff')[0]
-    
+def load_UEA(dataset, normalize=True, s3_bucket=None, s3_prefix=None):
+    if s3_bucket is not None:
+        fs = s3fs.S3FileSystem()
+        if s3_bucket.startswith('s3://'):
+            s3_bucket = s3_bucket[5:]  # Remove 's3://'
+ 
+        train_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TRAIN.arff'
+        test_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TEST.arff'
+ 
+        with fs.open(train_path, 'rb') as f:
+            train_data = loadarff(io.TextIOWrapper(f, encoding='utf-8'))[0]
+        with fs.open(test_path, 'rb') as f:
+            test_data = loadarff(io.TextIOWrapper(f, encoding='utf-8'))[0]
+    else:
+        # Local mode
+        train_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TRAIN.arff')[0]
+        test_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TEST.arff')[0]
+ 
     def extract_data(data):
         res_data = []
         res_labels = []
         for t_data, t_label in data:
-            t_data = np.array([ d.tolist() for d in t_data ])
+            t_data = np.array([d.tolist() for d in t_data])
             t_label = t_label.decode("utf-8")
             res_data.append(t_data)
             res_labels.append(t_label)
         return np.array(res_data).swapaxes(1, 2), np.array(res_labels)
-    
+ 
     train_X, train_y = extract_data(train_data)
     test_X, test_y = extract_data(test_data)
-    
+ 
     if normalize:
         scaler = StandardScaler()
         scaler.fit(train_X.reshape(-1, train_X.shape[-1]))
         train_X = scaler.transform(train_X.reshape(-1, train_X.shape[-1])).reshape(train_X.shape)
         test_X = scaler.transform(test_X.reshape(-1, test_X.shape[-1])).reshape(test_X.shape)
-    
+ 
     labels = np.unique(train_y)
-    transform = { k : i for i, k in enumerate(labels)}
+    transform = {k: i for i, k in enumerate(labels)}
     train_y = np.vectorize(transform.get)(train_y)
     test_y = np.vectorize(transform.get)(test_y)
+ 
     return train_X, train_y, test_X, test_y
     
     
@@ -123,8 +141,26 @@ def load_forecast_npy(name, univar=False):
     return data, train_slice, valid_slice, test_slice, scaler, pred_lens
 
 
-def load_forecast_csv(name, univar=False, raw=False):
-    data = pd.read_csv(f'datasets/{name}.csv', index_col='date', parse_dates=True)
+def load_forecast_csv(name, univar=False, raw=False, timeenc=0):
+    data = pd.read_csv(f'datasets/{name}.csv')
+    tmp_stamp = data[['date']]
+    cols_data = data.columns[1:]
+    data = data[cols_data]
+
+
+    tmp_stamp['date'] = pd.to_datetime(tmp_stamp.date)
+    if timeenc == 0:
+        tmp_stamp['month'] = tmp_stamp.date.apply(lambda row: row.month, 1)
+        tmp_stamp['day'] = tmp_stamp.date.apply(lambda row: row.day, 1)
+        tmp_stamp['weekday'] = tmp_stamp.date.apply(lambda row: row.weekday(), 1)
+        tmp_stamp['hour'] = tmp_stamp.date.apply(lambda row: row.hour, 1)
+        tmp_stamp['minute'] = tmp_stamp.date.apply(lambda row: row.minute, 1)
+        tmp_stamp['minute'] = tmp_stamp.minute.map(lambda x: x // 15)
+        data_stamp = tmp_stamp.drop(columns=['date']).values
+    elif timeenc == 1:
+        data_stamp = time_features(pd.to_datetime(tmp_stamp['date'].values), freq='t')
+        data_stamp = data_stamp.transpose(1, 0)
+
     
     if univar:
         if name in ('ETTh1', 'ETTh2', 'ETTm1', 'ETTm2'):
@@ -164,7 +200,7 @@ def load_forecast_csv(name, univar=False, raw=False):
     else:
         pred_lens = [24, 48, 96, 288, 672]
     
-    return data, train_slice, valid_slice, test_slice, scaler, pred_lens
+    return data, train_slice, valid_slice, test_slice, scaler, pred_lens, data_stamp
 
 
 def load_anomaly(name):
@@ -172,6 +208,52 @@ def load_anomaly(name):
     return res['all_train_data'], res['all_train_labels'], res['all_train_timestamps'], \
            res['all_test_data'],  res['all_test_labels'],  res['all_test_timestamps'], \
            res['delay']
+
+def load_UEA(dataset, normalize=True, s3_bucket=None, s3_prefix=None):
+    if s3_bucket is not None:
+        fs = s3fs.S3FileSystem()
+        if s3_bucket.startswith('s3://'):
+            s3_bucket = s3_bucket[5:]  # Remove 's3://'
+ 
+        train_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TRAIN.arff'
+        test_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TEST.arff'
+        
+def load_ptb_xl(name,s3_bucket=None, s3_prefix=None):
+    if s3_bucket is not None:
+        fs = s3fs.S3FileSystem()
+        if s3_bucket.startswith('s3://'):
+            s3_bucket = s3_bucket[5:]  # Remove 's3://'
+ 
+        x_train_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_train.pkl'
+        x_test_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_test.pkl'
+        x_val_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_val.pkl'
+        y_train_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_train.pkl'
+        y_test_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_test.pkl'
+        y_val_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_val.pkl'
+        with fs.open(x_train_path, 'rb') as f:
+            x_train = pickle.load(f)
+        with fs.open(x_test_path, 'rb') as f:
+            x_test = pickle.load(f)
+        with fs.open(x_val_path, 'rb') as f:
+            x_val = pickle.load(f)
+        with fs.open(y_train_path, 'rb') as f:
+            y_train = pickle.load(f)
+        with fs.open(y_test_path, 'rb') as f:
+            y_test = pickle.load(f)
+        with fs.open(y_val_path, 'rb') as f:
+            y_val = pickle.load(f)
+        
+
+    else:
+        x_train = pkl_load(f'datasets/PTB-XL/x_train.pkl')
+        x_test = pkl_load(f'datasets/PTB-XL/x_test.pkl')
+        x_val = pkl_load(f'datasets/PTB-XL/x_val.pkl')
+        y_train = pkl_load(f'datasets/PTB-XL/y_train.pkl')
+        y_test = pkl_load(f'datasets/PTB-XL/y_test.pkl')
+        y_val = pkl_load(f'datasets/PTB-XL/y_val.pkl')
+    return x_train, y_train, \
+           x_test,  y_test,  \
+           x_val,  y_val
 
 
 def gen_ano_train_data(all_train_data):

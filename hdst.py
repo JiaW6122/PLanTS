@@ -1,10 +1,11 @@
 import torch
 import torch.nn.functional as F
 from torch.utils.data import TensorDataset, DataLoader
+import torch.optim as optim
 import numpy as np
 from models.encoder import HDEncoder2
 from utils import split_with_nan, centerize_vary_length_series,  extract_fixed_random_windows, torch_pad_with, torch_pad_nan, FFT_for_Period, pad_nan_to_target
-from models.task_heads import DynamicCondPredHead
+from models.task_heads import DynamicCondPredHead, DynamicConstructHead, DynamicPredHead, DynamicConstructPredHead
 from models.losses import hierarchical_contrastive_loss
 import time
 from tqdm import tqdm
@@ -17,6 +18,8 @@ class HDST:
     def __init__(
         self,
         input_dims,
+        tmp_embed_type,
+        freq='h',
         kernels1=3,
         kernels2=3,
         output_dims1=128,
@@ -64,6 +67,8 @@ class HDST:
                             output_dims2=output_dims2,
                             kernels1=kernels1,
                             kernels2=kernels2,
+                            tmp_emb_type=tmp_embed_type,
+                            freq=freq,
                             hidden_dims1=hidden_dims1,
                             hidden_dims2=hidden_dims2, 
                             depth=depth,
@@ -75,9 +80,10 @@ class HDST:
             self.task_weights = task_weights
         else:
             self.task_weights = {
-                'local_static_contrast': 0.33,
-                'global_vatiant_contrast': 0.33,
-                'dynamic_trend_pred': 0.34,
+                'local_static_contrast': 0.25,
+                'global_vatiant_contrast': 0.25,
+                'dynamic_trend_pred': 0.25,
+                'dynamic_trend_pred2': 0.25,
             }
         assert sum(self.task_weights.values()) == 1.0
         
@@ -88,6 +94,29 @@ class HDST:
             in_features=output_dims1 + output_dims2,
             hidden_features=[64,128],
             out_features=output_dims2,
+        ).to(self.device)
+        self.dynamic_pred_task_head2 = DynamicCondPredHead(
+            in_features=output_dims1 + output_dims2,
+            hidden_features=[64,128],
+            out_features=input_dims,
+        ).to(self.device)
+
+        self.dynamic_pred_task_head3 = DynamicCondPredHead(
+            in_features=output_dims1 + output_dims2,
+            hidden_features=[64,128],
+            out_features=output_dims1 + output_dims2,
+        ).to(self.device)
+
+        self.dynamic_construct_head = DynamicConstructHead(
+            in_features=2*output_dims1,
+            hidden_features=[128],
+            out_features=input_dims,
+        ).to(self.device)
+
+        self.dynamic_pred_head = DynamicPredHead(
+            in_features=2*output_dims1,
+            hidden_features=[128],
+            out_features=input_dims,
         ).to(self.device)
 
         self.n_epochs = 0
@@ -211,6 +240,7 @@ class HDST:
                         out_dynamic,
                         x_windows,
                         dynamic_pred_task_head = self.dynamic_pred_task_head,
+                        dynamic_pred_task_head2 = self.dynamic_pred_task_head2,
                         weights = self.task_weights,
                         temperature = temperature
                     )
@@ -246,7 +276,7 @@ class HDST:
 
         return loss_log
 
-    def fit(self, train_data, k, w=None,top_k=3, temperature=1, n_epochs=None, n_iters=None):
+    def fit(self, train_all, n_channels, k, distance='mcc', w=None,top_k=5, temperature=1, n_epochs=None, n_iters=None):
         ''' Training the HDST model.
         Reshaped the input batch into shape (B, k, scale, C), where k*scale == n_timestampes.
         Args:
@@ -261,25 +291,27 @@ class HDST:
         Returns:
             loss_log: a list containing the training losses on each epoch.
         '''
-        assert train_data.ndim == 3
+        assert train_all.ndim == 3
+        train_data0=train_all[:,:,:n_channels]
         
         if n_iters is None and n_epochs is None:
-            n_iters = 200 if train_data.size <= 100000 else 600  # default param for n_iters
+            n_iters = 200 if train_data0.size <= 100000 else 600  # default param for n_iters
         
         # Split data into windows, pad windows with nans to have equal lengths
         if self.max_train_length is not None:
-            sections = train_data.shape[1] // self.max_train_length
+            sections = train_all.shape[1] // self.max_train_length
             if sections >= 2:
-                train_data = np.concatenate(split_with_nan(train_data, sections, axis=1), axis=0)
+                train_all = np.concatenate(split_with_nan(train_all, sections, axis=1), axis=0)
 
         # What timesteps have no modalities present for at least one batch element
-        temporal_missing = np.isnan(train_data).all(axis=-1).any(axis=0)
+        temporal_missing = np.isnan(train_all).all(axis=-1).any(axis=0)
         if temporal_missing[0] or temporal_missing[-1]:
-            train_data = centerize_vary_length_series(train_data)
+            train_all = centerize_vary_length_series(train_all)
 
         # Eliminate empty series        
-        train_data = train_data[~np.isnan(train_data).all(axis=2).all(axis=1)]
+        train_all = train_all[~np.isnan(train_all).all(axis=2).all(axis=1)]
         
+        train_data=train_all[:,:,:n_channels]
         print(f"Training data shape: {train_data.shape}")
 
 
@@ -290,15 +322,23 @@ class HDST:
             top_k=len(scale_list)
         if isinstance(w, int):
             scale_list=[w]
-            scale_weight=[1]
+            print(f"Scale list: {scale_list}")
+            # scale_weight=[1]
             top_k=1
+        if isinstance(w, list) and all(isinstance(x, int) for x in w):
+            scale_list=w
+            print(f"Scale list: {scale_list}")
+            top_k=len(w)
+            
 
         
-        train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+        # train_dataset = TensorDataset(torch.from_numpy(train_data).to(torch.float))
+        train_dataset_all = TensorDataset(torch.from_numpy(train_all).to(torch.float))
 
         # print(len(train_dataset))
-        train_loader = DataLoader(train_dataset, batch_size=min(self.batch_size, len(train_dataset)), shuffle=True, drop_last=True)
+        train_loader = DataLoader(train_dataset_all, batch_size=min(self.batch_size, len(train_dataset_all)), shuffle=True, drop_last=True)
         optimizer = torch.optim.AdamW(self._net.parameters(), lr=self.lr)
+        # scheduler = optim.lr_scheduler.StepLR(optimizer, step_size=30, gamma=0.5)  # lr scheduler
         torch.autograd.set_detect_anomaly(True)
         
         loss_log = []
@@ -349,7 +389,7 @@ class HDST:
                         scale=self.max_train_length
                     # print(type(scale))
                     # print(type(x))
-                    B, T, C = x.shape
+                    B, T, C2 = x.shape
                     if T%scale!=0:
                         length=(T//scale+1)*scale
                         x=torch_pad_nan(x,left=0,right=length-T,dim=1)
@@ -357,17 +397,41 @@ class HDST:
                         length=T
 
                     k=length//scale
-                    x_windows=x.reshape(B, k, scale, C)
+                    x_windows=x.reshape(B, k, scale, C2)
                     # print("x_windows:")
                     # print(x_windows.shape)
-                    x_windows_reshaped = x_windows.reshape(B * k, scale, C)  
+                    # x_windows_reshaped = x_windows.reshape(B * k, scale, C2) 
+                    x_data=x_windows[:,:,:,:n_channels]
+                    tmp_stamp=x_windows[:,:,:,n_channels:]
+                    
+
+
+                    # x_curr = x_data[:, :-1, :, :]
+                    # x_next = x_data[:, 1:, :, :]
+                    # t_curr = tmp_stamp[:, :-1, :, :]
+                    # t_next = tmp_stamp[:, 1:, :, :]
+
+                    # x_curr = x_curr.reshape(B * (k-1), scale, n_channels)
+                    # x_next = x_next.reshape(B * (k-1), scale, n_channels)
+                    # t_curr = t_curr.reshape(B * (k-1), scale, -1)
+                    # t_next = t_next.reshape(B * (k-1), scale, -1)
+
+                    x_data_reshaped=x_data.reshape(B * k, scale, n_channels)
+                    tmp_stamp_reshape=tmp_stamp.reshape(B * k, scale, C2-n_channels)
+                    # x_data=x_windows_reshaped[:,:,:n_channels]
+                    # x_tmp=x_windows_reshaped[:,:,n_channels:]
+                    # print(f"Shapes - x data: {x_data.shape}, x dtmp: {x_tmp.shape}")
+                    # torch.save({'x_data': x_data, 'x_tmp': x_tmp}, 'intermediate_results.pt')
+
     
                     # original windows
-                    out_static, out_dynamic=self._net(x_windows_reshaped) # (batch_size*k, scale, out_dims)
+                    out_static, tmp_embed=self._net(x_data_reshaped,tmp_stamp_reshape) # (batch_size*k, scale, out_dims)
+                    # print(out_static.shape)
+                    # print(tmp_embed.shape)
                     out_dim1 = out_static.size(-1)
-                    out_dim2 = out_dynamic.size(-1)
+                    out_dim2 = tmp_embed.size(-1)
                     out_static = out_static.reshape(B, k, scale, out_dim1)
-                    out_dynamic = out_dynamic.reshape(B, k, scale, out_dim2)
+                    tmp_embed = tmp_embed.reshape(B, k, scale, out_dim2)
     
                     # shuffled windows
                     # shuffle_idx = torch.randperm(x_windows.shape[2])
@@ -381,10 +445,14 @@ class HDST:
                     
                     loss_scale = hierarchical_contrastive_loss(
                         out_static,
-                        out_static,
-                        out_dynamic,
-                        x_windows,
+                        tmp_embed,
+                        x_data,
+                        distance,
                         dynamic_pred_task_head = self.dynamic_pred_task_head,
+                        dynamic_pred_task_head2 = self.dynamic_pred_task_head2,
+                        dynamic_pred_task_head3 = self.dynamic_pred_task_head3,
+                        dynamic_construct_head = self.dynamic_construct_head,
+                        dynamic_pred_head = self.dynamic_pred_head,
                         weights = self.task_weights,
                         temperature = temperature
                     )
@@ -421,6 +489,7 @@ class HDST:
             progress_bar.update(1)
             # print(f"Epoch #{self.n_epochs}: loss={cum_loss}")
             self.n_epochs += 1
+            # scheduler.step()
 
         progress_bar.close()
 
@@ -590,12 +659,16 @@ class HDST:
     def _eval_with_pooling(
             self,
             x,
+            n_channels,
             mask=None,
             slicing=None,
             encoding_window=None,
         ):
-        out_static, out_dynamic = self.net(x.to(self.device, non_blocking=True),mask)
-        out = torch.cat([out_static, out_dynamic], dim=-1)
+        # print(x.shape)
+        x_data=x[:,:,:n_channels]
+        x_tmp=x[:,:,n_channels:]
+        out_static, tmp_embed = self.net(x_data.to(self.device, non_blocking=True),x_tmp.to(self.device, non_blocking=True),mask)
+        out = torch.cat([out_static, tmp_embed], dim=-1)
         
         if encoding_window == 'full_series':
             if slicing is not None:
@@ -712,7 +785,8 @@ class HDST:
     
     def encode(
             self,
-            data,
+            data_all,
+            n_channels,
             mask=None,
             encoding_window=None,
             causal=False,
@@ -737,15 +811,15 @@ class HDST:
             repr, time_embeddings: 'repr' designates the representations for the input time series. The representation's associated time-embeddings are also returned if 'return_time_embeddings' is set to True.
         '''
         assert self.net is not None, 'please train or load a net first'
-        assert data.ndim == 3
+        assert data_all.ndim == 3
         if batch_size is None:
             batch_size = self.batch_size
-        n_samples, ts_l, _ = data.shape
+        n_samples, ts_l, _ = data_all.shape
 
         org_training = self.net.training
         self.net.eval()
         
-        dataset = TensorDataset(torch.from_numpy(data).to(torch.float))
+        dataset = TensorDataset(torch.from_numpy(data_all).to(torch.float))
         loader = DataLoader(dataset, batch_size=batch_size)
  
         with torch.no_grad():
@@ -776,6 +850,7 @@ class HDST:
                             if calc_buffer_l + n_samples > batch_size:
                                 out = self._eval_with_pooling(
                                     torch.cat(calc_buffer, dim=0),
+                                    n_channels,
                                     mask=mask,
                                     slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                     encoding_window=encoding_window,
@@ -790,6 +865,7 @@ class HDST:
                         else:
                             out = self._eval_with_pooling(
                                 x_sliding,
+                                n_channels,
                                 mask=mask,
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
@@ -801,6 +877,7 @@ class HDST:
                         if calc_buffer_l > 0:
                             out = self._eval_with_pooling(
                                 torch.cat(calc_buffer, dim=0),
+                                n_channels,
                                 mask=mask,
                                 slicing=slice(sliding_padding, sliding_padding+sliding_length),
                                 encoding_window=encoding_window,
@@ -821,6 +898,7 @@ class HDST:
                 else:
                     out = self._eval_with_pooling(
                         x,
+                        n_channels,
                         mask=mask,
                         encoding_window=encoding_window,
                     )
