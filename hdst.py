@@ -276,7 +276,7 @@ class HDST:
 
         return loss_log
 
-    def fit(self, train_all, n_channels, k, distance='mcc', w=None,top_k=5, temperature=1, n_epochs=None, n_iters=None):
+    def fit(self, train_all, n_channels, distance='mcc', w=None,top_k=5, temperature=1, n_epochs=None, n_iters=None):
         ''' Training the HDST model.
         Reshaped the input batch into shape (B, k, scale, C), where k*scale == n_timestampes.
         Args:
@@ -719,6 +719,7 @@ class HDST:
                 
             
         return out.cpu()
+        # return out
 
     def _eval_with_pooling2(
             self,
@@ -787,12 +788,12 @@ class HDST:
             self,
             data_all,
             n_channels,
+            batch_size=None,
             mask=None,
             encoding_window=None,
             causal=False,
             sliding_length=None,
             sliding_padding=0,
-            batch_size=None,
         ):
         ''' Compute representations using the model.
         
@@ -908,12 +909,19 @@ class HDST:
                         
                 output.append(out)
                 
-                
+            # print(output[0].shape)
+            # print(len(output))
+            # output = [o.numpy() for o in output]  # each o is shape (8, 1000, 256)
+            # output = np.concatenate(output, axis=0)
+
             output = torch.cat(output, dim=0)
+            # output = output.cpu().numpy()
+            torch.cuda.empty_cache()
             
             
         self.net.train(org_training)
         return output.numpy()
+        # return output
 
     def encode2(
             self,

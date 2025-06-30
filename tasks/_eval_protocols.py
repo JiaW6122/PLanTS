@@ -6,8 +6,21 @@ from sklearn.neighbors import KNeighborsClassifier
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import make_pipeline
 from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.multiclass import OneVsRestClassifier
+
 
 def fit_svm(features, y, MAX_SAMPLES=10000):
+    is_multilabel = y.ndim == 2 and set(np.unique(y)) <= {0, 1}
+
+    if is_multilabel:
+        # Multi-label classification
+        base_svm = make_pipeline(
+            StandardScaler(),
+            SVC(C=1.0, gamma='scale', probability=True, max_iter=10000000)
+        )
+        clf = OneVsRestClassifier(base_svm, n_jobs=-1)
+        clf.fit(features, y)
+        return clf
     nb_classes = np.unique(y, return_counts=True)[1].shape[0]
     train_size = features.shape[0]
 
@@ -75,6 +88,15 @@ def fit_knn(features, y):
     )
     pipe.fit(features, y)
     return pipe
+
+def fit_knn_multi_label(features, y):
+    base_knn = make_pipeline(
+        StandardScaler(),
+        KNeighborsClassifier(n_neighbors=100)
+    )
+    clf = OneVsRestClassifier(base_knn, n_jobs=-1)
+    clf.fit(features, y)
+    return clf
 
 def fit_ridge(train_features, train_y, valid_features, valid_y, MAX_SAMPLES=100000):
     # If the training set is too large, subsample MAX_SAMPLES examples

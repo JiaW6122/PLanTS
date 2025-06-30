@@ -8,7 +8,6 @@ from scipy.io.arff import loadarff
 import pickle
 import matplotlib.pyplot as plt
 from matplotlib.patches import Patch
-from timefeatures import time_features
 import s3fs
 import io
 
@@ -97,6 +96,8 @@ def load_UEA(dataset, normalize=True, s3_bucket=None, s3_prefix=None):
         train_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TRAIN.arff')[0]
         test_data = loadarff(f'datasets/UEA/{dataset}/{dataset}_TEST.arff')[0]
  
+    # print(train_data.shape)
+    # print(test_data.shape)
     def extract_data(data):
         res_data = []
         res_labels = []
@@ -209,14 +210,14 @@ def load_anomaly(name):
            res['all_test_data'],  res['all_test_labels'],  res['all_test_timestamps'], \
            res['delay']
 
-def load_UEA(dataset, normalize=True, s3_bucket=None, s3_prefix=None):
-    if s3_bucket is not None:
-        fs = s3fs.S3FileSystem()
-        if s3_bucket.startswith('s3://'):
-            s3_bucket = s3_bucket[5:]  # Remove 's3://'
+# def load_UEA(dataset, normalize=True, s3_bucket=None, s3_prefix=None):
+#     if s3_bucket is not None:
+#         fs = s3fs.S3FileSystem()
+#         if s3_bucket.startswith('s3://'):
+#             s3_bucket = s3_bucket[5:]  # Remove 's3://'
  
-        train_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TRAIN.arff'
-        test_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TEST.arff'
+#         train_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TRAIN.arff'
+#         test_path = f'{s3_bucket}/{s3_prefix}/UEA/{dataset}/{dataset}_TEST.arff'
         
 def load_ptb_xl(name,s3_bucket=None, s3_prefix=None):
     if s3_bucket is not None:
@@ -224,12 +225,12 @@ def load_ptb_xl(name,s3_bucket=None, s3_prefix=None):
         if s3_bucket.startswith('s3://'):
             s3_bucket = s3_bucket[5:]  # Remove 's3://'
  
-        x_train_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_train.pkl'
-        x_test_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_test.pkl'
-        x_val_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/x_val.pkl'
-        y_train_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_train.pkl'
-        y_test_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_test.pkl'
-        y_val_path = f'{s3_bucket}/{s3_prefix}/PTB-XL/y_val.pkl'
+        x_train_path = f'{s3_bucket}/{s3_prefix}/{name}/x_train.pkl'
+        x_test_path = f'{s3_bucket}/{s3_prefix}/{name}/x_test.pkl'
+        x_val_path = f'{s3_bucket}/{s3_prefix}/{name}/x_val.pkl'
+        y_train_path = f'{s3_bucket}/{s3_prefix}/{name}/y_train.pkl'
+        y_test_path = f'{s3_bucket}/{s3_prefix}/{name}/y_test.pkl'
+        y_val_path = f'{s3_bucket}/{s3_prefix}/{name}/y_val.pkl'
         with fs.open(x_train_path, 'rb') as f:
             x_train = pickle.load(f)
         with fs.open(x_test_path, 'rb') as f:
@@ -245,12 +246,12 @@ def load_ptb_xl(name,s3_bucket=None, s3_prefix=None):
         
 
     else:
-        x_train = pkl_load(f'datasets/PTB-XL/x_train.pkl')
-        x_test = pkl_load(f'datasets/PTB-XL/x_test.pkl')
-        x_val = pkl_load(f'datasets/PTB-XL/x_val.pkl')
-        y_train = pkl_load(f'datasets/PTB-XL/y_train.pkl')
-        y_test = pkl_load(f'datasets/PTB-XL/y_test.pkl')
-        y_val = pkl_load(f'datasets/PTB-XL/y_val.pkl')
+        x_train = pkl_load(f'datasets/{name}/x_train.pkl')
+        x_test = pkl_load(f'datasets/{name}/x_test.pkl')
+        x_val = pkl_load(f'datasets/{name}/x_val.pkl')
+        y_train = pkl_load(f'datasets/{name}/y_train.pkl')
+        y_test = pkl_load(f'datasets/{name}/y_test.pkl')
+        y_val = pkl_load(f'datasets/{name}/y_val.pkl')
     return x_train, y_train, \
            x_test,  y_test,  \
            x_val,  y_val
