@@ -39,7 +39,7 @@ def parse_args():
     parser.add_argument('--max_train_length', type=int, default=1000, help='Maximum training sequence length')
     parser.add_argument('--iters', type=int, default=None, help='Number of iterations')
     parser.add_argument('--distance', type=str, default='mcc', choices=['mcc', 'dwt'], help='Distance metric for similarity')
-    parser.add_argument('--window_size', type=str, default=50,
+    parser.add_argument('--window_size', type=str, default="50",
                         help='Window size for training. Can be an int (e.g., "10"), a list (e.g., "[50,100,200]"), or a string (e.g., "Auto")')
 
     parser.add_argument('--top_k', type=int, default=3, help='Number of top periodicities to consider')

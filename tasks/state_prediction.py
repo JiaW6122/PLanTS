@@ -12,6 +12,8 @@ from sklearn.decomposition import PCA
 import seaborn as sns
 import pandas as pd
 from sklearn.manifold import TSNE
+# import umap  # or just: import umap
+
 
 class StateClassifier(torch.nn.Module):
     def __init__(self, input_size, output_size):
@@ -60,7 +62,7 @@ def create_dataset(train_data, train_labels, test_data, test_labels, window_size
 
     return train_loader, valid_loader, test_loader
 
-def run_epoch(model, classifier, data_loader, is_train, lr=0.001):
+def run_epoch(model, n_channels, classifier, data_loader, is_train, lr=0.001):
     if is_train:
         classifier.train()
     else:
@@ -78,7 +80,7 @@ def run_epoch(model, classifier, data_loader, is_train, lr=0.001):
         x=x.cpu().detach().numpy()
         x=np.transpose(x, (0, 2, 1)) 
         
-        encoding=model.encode(x, encoding_window='full_series')
+        encoding=model.encode(x, n_channels, encoding_window='full_series')
         # print(encoding.shape)
         encoding=torch.Tensor(encoding).to(device)
         classifier=classifier.to(device)
@@ -107,13 +109,13 @@ def run_epoch(model, classifier, data_loader, is_train, lr=0.001):
     c = confusion_matrix(y_all.astype(int), prediction_class_all)
     return epoch_loss / batch_count, epoch_acc / batch_count, epoch_auc, epoch_auprc, c
 
-def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs=100):
+def train_classifier(model, n_channels, classifier, train_loader, valid_loader, lr, n_epochs=100):
     best_auc, best_acc, best_aupc, best_loss = 0, 0, 0, np.inf
     train_losses, test_losses = [], []
     train_accs, test_accs = [], []
     for epoch in range(n_epochs):
-        train_loss, train_acc, train_auc, train_auprc, _= run_epoch(model, classifier, train_loader, True, lr)
-        test_loss, test_acc, test_auc, test_auprc, _ = run_epoch(model, classifier, valid_loader, False)
+        train_loss, train_acc, train_auc, train_auprc, _= run_epoch(model, n_channels, classifier, train_loader, True, lr)
+        test_loss, test_acc, test_auc, test_auprc, _ = run_epoch(model, n_channels, classifier, valid_loader, False)
         train_losses.append(train_loss)
         test_losses.append(test_loss)
         train_accs.append(train_acc)
@@ -148,26 +150,34 @@ def train_classifier(model, classifier, train_loader, valid_loader, lr, n_epochs
 
 
 
-def eval_state_prediction(model, train_data, train_labels, test_data, test_labels, lr, window_size=4, n_states=6, encoding_size=256):
+def eval_state_prediction(data_type, model, n_channels, train_data, train_labels, test_data, test_labels, lr, window_size=4, n_states=6, encoding_size=256):
     # train_repr = model.encode(train_data)
     # test_repr = model.encode(test_data)
     model.eval()
+    if data_type=="har":
+        window_size=4
+        n_states=6
+    elif data_type=="simulation":
+        window_size=50
+        n_states=4
     classifier=StateClassifier(input_size=encoding_size, output_size=n_states)
     train_loader, valid_loader, test_loader=create_dataset(train_data, train_labels, test_data, test_labels, window_size)
     ###train
-    best_acc, best_auc, best_aupc = train_classifier(model, classifier, train_loader, valid_loader, lr)
+    best_acc, best_auc, best_aupc = train_classifier(model, n_channels, classifier, train_loader, valid_loader, lr)
     print('Best_acc:', best_acc,'Best_auc:', best_auc, 'Best_aupc:', best_aupc)
 
     ###test
-    _, test_acc, test_auc, test_aupc,_ =run_epoch(model, classifier, test_loader, False)
+    _, test_acc, test_auc, test_aupc,_ =run_epoch(model, n_channels, classifier, test_loader, False)
     print('=======> Performance Summary:')
     print(f'State Prediction:\tAccuracy: {100 * test_acc:.2f}\tAUC: {100 * test_auc:.2f}\tAUPRC: {test_aupc:.2f}')
 
 
-def tracking_encoding(model, data, labels, subject_id=1, window_size=4, sliding_gap=5):
+def tracking_encoding(model, n_channels, data, labels, subject_id=1, window_size=4, sliding_gap=5):
     data = np.transpose(data, (0, 2, 1)) 
     sample = data[subject_id]
     label = labels[subject_id]
+    # print(sample.shape)
+    # print(label.shape)
     T = data.shape[-1]
     encodings = []
     windows_label = []
@@ -179,7 +189,9 @@ def tracking_encoding(model, data, labels, subject_id=1, window_size=4, sliding_
         windows_label.append((np.bincount(label[t-(window_size//2):t+(window_size//2)].astype(int)).argmax()))
         inputs=np.expand_dims(windows,axis=0)
         inputs=np.transpose(inputs, (0, 2, 1)) 
-        encoding=model.encode(inputs, encoding_window='full_series')
+        # encoding=model.encode(inputs, n_channels, encoding_window='full_series')[:,:128]
+        encoding=model.encode(inputs, n_channels, encoding_window='full_series')
+        # print(encoding.shape)
         encoding=torch.from_numpy(encoding).to(torch.float)
         # print(encoding.squeeze(0).shape)
         encodings.append(encoding.squeeze(0))
@@ -190,11 +202,22 @@ def tracking_encoding(model, data, labels, subject_id=1, window_size=4, sliding_
     # print(len(encodings))
     encodings = torch.stack(encodings, 0)
     # print(encodings.shape)
-    pca = PCA(n_components=5)
+    pca = PCA(n_components=3)
     embedding = pca.fit_transform(encodings.detach().cpu().numpy())
+    # embedding = encodings.detach().cpu().numpy()
+
+    # dim_variances = np.var(encodings.detach().cpu().numpy(), axis=0)
+    # # print(dim_variances)
+    # top_k_dims = np.argsort(dim_variances)[-10:]  # top k dimensions
+    # embedding = encodings.detach().cpu().numpy()[:, top_k_dims]  # shape (T, k)
+
+    # salience = np.sum(np.abs(np.diff(encodings.detach().cpu().numpy(), axis=0)), axis=0)
+    # top_k = np.argsort(salience)[-10:]
+    # embedding = encodings.detach().cpu().numpy()[:, top_k]  # shape (T, k)
+    
 
     f, axs = plt.subplots(2)  # , gridspec_kw={'height_ratios': [1, 2]})
-    f.set_figheight(10)
+    f.set_figheight(6)
     f.set_figwidth(27)
     # print(sample.shape)
     for feat in range(min(sample.shape[0], 10)):
@@ -209,23 +232,76 @@ def tracking_encoding(model, data, labels, subject_id=1, window_size=4, sliding_
     axs[0].margins(x=0)
     axs[0].grid(False)
     t_0 = 0
+    colors = [
+    'y',  # yellow
+    'g',  # green
+    'b',  # blue
+    'r',  # red
+    'c',  # cyan
+    'm',  # magenta
+    'orange',
+    'purple',
+    'pink',
+    'brown',
+    'gray',
+    'olive',
+    'teal',
+    'navy',
+    'gold',
+    'lime',
+    'indigo',
+    'turquoise',
+    'coral',
+    'darkred'
+]
+
     for t in range(1, label.shape[-1]):
         if label[t]==label[t-1]:
             continue
         else:
-            axs[0].axvspan(t_0, min(t+1, label.shape[-1]-1), facecolor=['y', 'g', 'b', 'r', 'c', 'm'][int(label[t_0])], alpha=0.5)
+            # print(label[t_0])
+            axs[0].axvspan(t_0, min(t+1, label.shape[-1]-1), facecolor=colors[int(label[t_0])], alpha=0.5)
             t_0 = t
-    axs[0].axvspan(t_0, label.shape[-1]-1 , facecolor=['y', 'g', 'b', 'r'][int(label[t_0])], alpha=0.5)
+    axs[0].axvspan(t_0, label.shape[-1]-1 , facecolor=colors[int(label[t_0])], alpha=0.5)
     axs[-1].set_title('Encoding Trajectory', fontsize=30, fontweight='bold')
-    sns.heatmap(embedding.T, cbar=False, linewidth=0.5, ax=axs[-1], linewidths=0.05, xticklabels=False)
+    sns.heatmap(embedding.T, cbar=False, cmap="magma", linewidth=0.5, ax=axs[-1], linewidths=0.05, xticklabels=False)
     f.tight_layout()
     plt.show()
     # sns.heatmap(encodings.detach().cpu().numpy().T, linewidth=0.5)
-    plt.savefig(os.path.join("figures/UCI_HAR/embedding_trajectory_hm.pdf"))
+    f.savefig(os.path.join("figures/UCI_HAR/embedding_trajectory_hm.pdf"))
 
 
+def visualization(model, n_channels, data, labels, window_size=4, sliding_gap=5):
+    data = np.transpose(data, (0, 2, 1)) 
+    T = data.shape[-1]
+    encodings = []
+    windows_label = []
+    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    # model.to(device)
+    model.eval()
+    for i in range(data.shape[0]):
+        for t in range(window_size//2,T-window_size//2,sliding_gap):
+            windows = data[i][:, t-(window_size//2):t+(window_size//2)]
+            windows_label.append((np.bincount(labels[i][t-(window_size//2):t+(window_size//2)].astype(int)).argmax()))
+            inputs=np.expand_dims(windows,axis=0)
+            inputs=np.transpose(inputs, (0, 2, 1)) 
+            # encoding=model.encode(inputs, n_channels, encoding_window='full_series')[:,:128]
+            encoding=model.encode(inputs, n_channels, encoding_window='full_series')
+            encoding=torch.from_numpy(encoding).to(torch.float)
+            # print(encoding.squeeze(0).shape)
+            encodings.append(encoding.squeeze(0))
+        
+    for t in range(window_size//(2*sliding_gap)):
+        # fix offset
+        encodings.append(encodings[-1])
+        encodings.insert(0, encodings[0])
+    # print(len(encodings))
+    encodings = torch.stack(encodings, 0)
+    
     tsne = TSNE(n_components=2)
     embedding = tsne.fit_transform(encodings.detach().cpu().numpy())
+    # umap_model = umap.UMAP(n_components=2, n_neighbors=15, min_dist=0.1, metric='euclidean')
+    # embedding = umap_model.fit_transform(encodings.detach().cpu().numpy())
     d = {'f1':embedding[:,0], 'f2':embedding[:,1], 'state':windows_label}#, 'label':windows_label}
     df = pd.DataFrame(data=d)
     fig, ax = plt.subplots()

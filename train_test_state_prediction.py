@@ -43,7 +43,6 @@ def parse_args():
 
     parser.add_argument('--top_k', type=int, default=3, help='Number of top periodicities to consider')
     parser.add_argument('--tmp_emb_type', type=str, default="original", choices=["original", 'positional', 'temporal_fixed', 'temporal_learn'], help='Type of temporal embedding')
-    parser.add_argument('--tmp_emb_type', type=str, default="original", choices=["original", 'positional', 'temporal_fixed', 'temporal_learn'], help='Type of temporal embedding')
     parser.add_argument('--freq', type=str, default='h', help='Frequency for temporal embedding')
     parser.add_argument('--weight_local_static_contrast', type=float, default=0.25,
                         help='Weight for the local static contrastive loss')
