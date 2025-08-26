@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 
 import datautils
 from utils import init_dl_program, name_with_datetime, pkl_save
-from hdst import HDST
+from plants import PLanTS
 import torch
 import gc
 import numpy as np
@@ -99,7 +99,7 @@ def main(args):
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
     start_time = time.time()
-    model = HDST(
+    model = PLanTS(
         input_dims=train_data.shape[-1],
         tmp_embed_type=args.tmp_emb_type,
         freq=args.freq,
@@ -139,8 +139,8 @@ def main(args):
     from tasks.state_prediction import eval_state_prediction
     eval_state_prediction("har",model,n_channels,train_data,train_labels,test_data,test_labels,lr=0.001,encoding_size=256)
     from tasks.state_prediction import tracking_encoding, visualization
-    tracking_encoding(model, n_channels,train_data,train_labels,subject_id=11)
-    tracking_encoding(model, n_channels,test_data,test_labels,subject_id=8)
+    tracking_encoding(model, n_channels,train_data,train_labels,subject_id=0)
+    tracking_encoding(model, n_channels,test_data,test_labels,subject_id=0)
 
 
 

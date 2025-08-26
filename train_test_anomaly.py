@@ -6,7 +6,7 @@ import matplotlib.pyplot as plt
 
 import datautils
 from utils import init_dl_program, name_with_datetime, pkl_save
-from hdst import HDST
+from plants import PLanTS
 import torch
 import gc
 import numpy as np
@@ -99,7 +99,7 @@ def main(args):
     # os.environ['CUDA_LAUNCH_BLOCKING'] = "1"
 
     start_time = time.time()
-    model = HDST(
+    model = PLanTS(
         input_dims=train_data.shape[-1],
         tmp_embed_type=args.tmp_emb_type,
         freq=args.freq,
