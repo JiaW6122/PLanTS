@@ -18,7 +18,7 @@ We evaluate PLanTS on multiple benchmark multivariate time series datasets:
 
 The access and preprocessing of 30 UEA datasets, 4 ETT datasets and Yahoo dataset can be found in [TS2Vec](https://github.com/zhihanyue/ts2vec).
 
-##Usage
+## Usage
 Train and test scripts for different tasks are provided:
 - [train_test_classification.py] 
 - [train_test_forecasting.py]   
@@ -33,4 +33,4 @@ python train_test_classification.py --dataset_name=<dataset_name>
 ```
 Replace `<dataset_name>` with your dataset name.
 
-##Citation
+## Citation
