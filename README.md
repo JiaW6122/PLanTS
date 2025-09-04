@@ -1,2 +1,7 @@
-PLanTS
-This repository contains the official implementation for the paper: PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series
+# PLanTS 🌱
+This repository contains the official implementation for the paper: **PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series**.
+
+
+## Requirments
+The dependencies can be installed by:
+
