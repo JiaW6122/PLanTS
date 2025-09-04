@@ -7,6 +7,8 @@ from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MultiLabelBinarizer
 from sklearn.preprocessing import StandardScaler
 import pickle
+import argparse
+import os
 
 def load_raw_data_ptbxl(df, sampling_rate, path):
     if sampling_rate == 100:
@@ -173,7 +175,7 @@ def select_data(XX,YY, ctype, min_samples):
     return X, Y, y, mlb
 
 
-def preprocess_signals(X_train,  X_test, outputfolder):
+def preprocess_signals(X_train, X_val,  X_test, outputfolder):
     # Standardize data such that mean 0 and variance 1
     ss = StandardScaler()
     ss.fit(np.vstack(X_train).flatten()[:,np.newaxis].astype(float))
@@ -182,7 +184,7 @@ def preprocess_signals(X_train,  X_test, outputfolder):
     with open(outputfolder+'standard_scaler.pkl', 'wb') as ss_file:
         pickle.dump(ss, ss_file)
 
-    return apply_standardizer(X_train, ss), apply_standardizer(X_test, ss)
+    return apply_standardizer(X_train, ss), apply_standardizer(X_val, ss), apply_standardizer(X_test, ss)
 
 def apply_standardizer(X, ss):
     X_tmp = []
@@ -192,42 +194,65 @@ def apply_standardizer(X, ss):
     X_tmp = np.array(X_tmp)
     return X_tmp
 
-path = 'datasets/ptb-xl/'
-sampling_rate=100
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--group', type=str, required=True, help='The label group. Chosing from "diagnostic", "form" and "rhythm".')
 
-# load and convert annotation data
-Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
-# print(Y.shape)
-Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
+    args = parser.parse_args()
 
-# Load raw signal data
-X = load_raw_data_ptbxl(Y, sampling_rate, path)
+    path = 'datasets/ptb-xl/'
+    sampling_rate=100
+
+    # load and convert annotation data
+    Y = pd.read_csv(path+'ptbxl_database.csv', index_col='ecg_id')
+    # print(Y.shape)
+    Y.scp_codes = Y.scp_codes.apply(lambda x: ast.literal_eval(x))
+
+    # Load raw signal data
+    X = load_raw_data_ptbxl(Y, sampling_rate, path)
 
 
-print(X.shape)
-print(Y.shape)
+    # print(X.shape)
+    # print(Y.shape)
 
-labels=compute_label_aggregations(Y,path,'diagnostic')
+    labels=compute_label_aggregations(Y,path,args.group)
 
-data_X, data_labels, data_Y, _ =select_data(X,labels,'diagnostic',0)
-print(data_X.shape)
-print(data_labels.shape)
-print(data_Y.shape)
+    data_X, data_labels, data_Y, _ =select_data(X,labels,args.group,0)
+    # print(data_X.shape)
+    # print(data_labels.shape)
+    # print(data_Y.shape)
 
-X_train, X_test, y_train, y_test = train_test_split(data_X, data_Y, test_size=0.2, random_state=0)
-# X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
-print(X_train.shape)
-# print(X_val.shape)
-print(X_test.shape)
-# Preprocess signal data
-X_train,  X_test = preprocess_signals(X_train, X_test, path+'data/')
-n_classes = y_train.shape[1]
+    X_train, X_test, y_train, y_test = train_test_split(data_X, data_Y, test_size=0.2, random_state=0)
+    X_train, X_val, y_train, y_val = train_test_split(X_train, y_train, test_size=0.2, random_state=0)
+    # print(X_train.shape)
+    # print(X_val.shape)
+    # print(X_test.shape)
+    # Preprocess signal data
+    X_train, X_val, X_test = preprocess_signals(X_train, X_val, X_test, path+'data/')
+    n_classes = y_train.shape[1]
 
-with open(path+'data/x_train.pkl', 'wb') as f:
-    pickle.dump(X_train, f)
-with open(path+'data/y_train.pkl', 'wb') as f:
-    pickle.dump(y_train, f)
-with open(path+'data/x_test.pkl', 'wb') as f:
-    pickle.dump(X_test, f)
-with open(path+'data/y_test.pkl', 'wb') as f:
-    pickle.dump(y_test, f)
+    folder_path = os.path.join(path, args.group)
+    os.makedirs(folder_path, exist_ok=True)
+
+    with open(folder_path+'/x_train.pkl', 'wb') as f:
+        pickle.dump(X_train, f)
+    with open(folder_path+'/y_train.pkl', 'wb') as f:
+        pickle.dump(y_train, f)
+    with open(folder_path+'/x_test.pkl', 'wb') as f:
+        pickle.dump(X_test, f)
+    with open(folder_path+'/y_test.pkl', 'wb') as f:
+        pickle.dump(y_test, f)
+    with open(folder_path+'/x_val.pkl', 'wb') as f:
+        pickle.dump(X_val, f)
+    with open(folder_path+'/y_val.pkl', 'wb') as f:
+        pickle.dump(y_val, f)
+
+    # with open(folder_path+'/ptb-xl.pkl', 'wb') as f:
+    #         pickle.dump({
+    #             'train_data': X_train,
+    #             'train_labels': y_train,
+    #             'test_data': X_test,
+    #             'test_labels': y_test,
+    #             'val_data': X_val,
+    #             'val_labels': y_val
+    #         }, f)

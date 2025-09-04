@@ -246,12 +246,12 @@ def load_ptb_xl(name,s3_bucket=None, s3_prefix=None):
         
 
     else:
-        x_train = pkl_load(f'datasets/{name}/x_train.pkl')
-        x_test = pkl_load(f'datasets/{name}/x_test.pkl')
-        x_val = pkl_load(f'datasets/{name}/x_val.pkl')
-        y_train = pkl_load(f'datasets/{name}/y_train.pkl')
-        y_test = pkl_load(f'datasets/{name}/y_test.pkl')
-        y_val = pkl_load(f'datasets/{name}/y_val.pkl')
+        x_train = pkl_load(f'datasets/ptb-xl/{name}/x_train.pkl')
+        x_test = pkl_load(f'datasets/ptb-xl/{name}/x_test.pkl')
+        x_val = pkl_load(f'datasets/ptb-xl/{name}/x_val.pkl')
+        y_train = pkl_load(f'datasets/ptb-xl/{name}/y_train.pkl')
+        y_test = pkl_load(f'datasets/ptb-xl/{name}/y_test.pkl')
+        y_val = pkl_load(f'datasets/ptb-xl/{name}/y_val.pkl')
     return x_train, y_train, \
            x_test,  y_test,  \
            x_val,  y_val
