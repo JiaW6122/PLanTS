@@ -83,7 +83,6 @@ class PLanTS:
                 'local_static_contrast': 0.25,
                 'global_vatiant_contrast': 0.25,
                 'dynamic_trend_pred': 0.25,
-                'dynamic_trend_pred2': 0.25,
             }
         assert sum(self.task_weights.values()) == 1.0
         
@@ -274,10 +273,6 @@ class PLanTS:
                         x_data,
                         distance,
                         dynamic_pred_task_head = self.dynamic_pred_task_head,
-                        dynamic_pred_task_head2 = self.dynamic_pred_task_head2,
-                        dynamic_pred_task_head3 = self.dynamic_pred_task_head3,
-                        dynamic_construct_head = self.dynamic_construct_head,
-                        dynamic_pred_head = self.dynamic_pred_head,
                         weights = self.task_weights,
                         temperature = temperature
                     )

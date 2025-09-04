@@ -65,7 +65,6 @@ def main(args):
         'local_static_contrast': args.weight_local_static_contrast,
         'global_vatiant_contrast': args.weight_global_vatiant_contrast,
         'dynamic_trend_pred': args.weight_dynamic_trend_pred,
-        'dynamic_trend_pred2': 0,
     }
 
     try:
