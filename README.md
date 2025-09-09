@@ -20,11 +20,11 @@ The access and preprocessing of 30 UEA datasets, 4 ETT datasets and Yahoo datase
 
 ## Usage
 Train and test scripts for different tasks are provided:
-- [train_test_classification.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_classification.py)
-- [train_test_forecasting.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_forecasting.py)
-- [train_test_anomaly.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_anomaly.py)
-- [train_test_multi-label_classification.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_multi-label_classification.py) 
-- [train_test_state_prediction.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_state_prediction.py)
+- Multi-calss classification: [train_test_classification.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_classification.py)
+- Forecasting: [train_test_forecasting.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_forecasting.py)
+- Anomaly detecion: [train_test_anomaly.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_anomaly.py)
+- Multi-label classification: [train_test_multi-label_classification.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_multi-label_classification.py) 
+- Trajectory tracking: [train_test_state_prediction.py](https://github.com/JiaW6122/PLanTS/blob/main/train_test_state_prediction.py)
 
 Example command with default hyperparameters:
 
