@@ -1,5 +1,5 @@
 # PLanTS 🌱
-This repository contains the official implementation for the paper: **PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series**. **PLanTS** is a self-supervised learning framework for non-stationary multivariate time series.  
+This repository contains the official implementation for the paper: [**PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series**](https://arxiv.org/abs/2509.05478). **PLanTS** is a self-supervised learning framework for non-stationary multivariate time series.  
 
 
 ## Requirments
