@@ -57,13 +57,10 @@ python train_test_classification.py --dataset_name="StandWalkJump" --weight_loca
 ## Citation
 If this work has proven useful or you are using this repository for your project, please cite using:
 ```
-@misc{wang2025plantsperiodicityawarelatentstaterepresentation,
-      title={PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series}, 
-      author={Jia Wang and Xiao Wang and Chi Zhang},
-      year={2025},
-      eprint={2509.05478},
-      archivePrefix={arXiv},
-      primaryClass={cs.LG},
-      url={https://arxiv.org/abs/2509.05478}, 
+@article{wang2025plants,
+  title={PLanTS: Periodicity-aware Latent-state Representation Learning for Multivariate Time Series},
+  author={Wang, Jia and Wang, Xiao and Zhang, Chi},
+  journal={arXiv preprint arXiv:2509.05478},
+  year={2025}
 }
 ```
